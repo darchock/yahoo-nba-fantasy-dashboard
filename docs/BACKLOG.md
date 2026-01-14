@@ -7,20 +7,20 @@ Legend: `[ ]` pending | `[x]` done | `[~]` in progress | `[-]` skipped
 ## Phase 1: Database & Multi-User Foundation
 
 ### Project Setup
-- [ ] Create folder structure (app/, backend/, dashboard/, data/)
-- [ ] Create requirements.txt with dependencies
-- [ ] Create .env.example template
-- [ ] Set up app/config.py with environment variable loading
+- [x] Create folder structure (app/, backend/, dashboard/, data/)
+- [x] Create requirements.txt with dependencies
+- [x] Create .env.example template
+- [x] Set up app/config.py with environment variable loading
 
 ### Database
-- [ ] Create app/database/models.py (User, OAuthToken, UserLeague, CachedData)
-- [ ] Add Pick-a-Winner models (MatchupPrediction, PredictionResult, PredictionStandings)
-- [ ] Create app/database/connection.py (session management)
-- [ ] Test database creation and migrations
+- [x] Create app/database/models.py (User, OAuthToken, UserLeague, CachedData)
+- [x] Add Pick-a-Winner models (MatchupPrediction, PredictionResult, PredictionStandings)
+- [x] Create app/database/connection.py (session management)
+- [x] Test database creation and migrations
 
 ### Adapt Core Code from CLI Repo
-- [ ] Copy and adapt parsing helpers (safe_get, STAT_ID_TO_NAME_MAP)
-- [ ] Create app/services/yahoo_api.py (instance-based, per-user tokens)
+- [x] Copy and adapt parsing helpers (safe_get, STAT_ID_TO_NAME_MAP)
+- [x] Create app/services/yahoo_api.py (instance-based, per-user tokens)
 
 ---
 

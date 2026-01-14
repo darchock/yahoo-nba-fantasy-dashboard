@@ -64,19 +64,40 @@ SQLite for MVP, migrate to PostgreSQL when scaling.
 ## Decision 4: Documentation Strategy
 
 **Date:** 2026-01-14
-**Status:** Decided
+**Status:** Updated
 
 **Context:**
 Multi-session work requires context persistence between Claude Code sessions.
 
 **Decision:**
-Markdown files in repo (CLAUDE.md, docs/*.md), gitignored.
+Markdown files in repo (CLAUDE.md, docs/*.md), tracked in git (NOT gitignored).
 
 **Rationale:**
 - Claude can read files at session start
-- Version controlled locally but not pushed (private notes)
-- No external dependencies (vs Trello)
+- Full revision history for documentation changes
+- Backed up with the code
+- Initially considered gitignoring, but revision history is valuable
+- Can make repo private if concerned about visibility
 - Searchable in IDE
+
+---
+
+## Decision 5: Quality Verification Process
+
+**Date:** 2026-01-14
+**Status:** Decided
+
+**Context:**
+Code that runs successfully may still have IDE/type checker errors, deprecation warnings, or type annotation issues.
+
+**Decision:**
+Before marking any task complete, always run both runtime tests AND check Pylance/IDE diagnostics.
+
+**Rationale:**
+- Runtime tests only catch execution errors
+- Pylance catches type mismatches, deprecated APIs, unused code
+- Fixing issues early prevents technical debt
+- Documented in CLAUDE.md Quality Checklist and docs/ISSUES_LOG.md
 
 ---
 
