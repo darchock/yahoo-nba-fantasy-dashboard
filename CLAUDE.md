@@ -33,6 +33,7 @@ Ready to start Phase 2: FastAPI Backend (OAuth endpoints, API routes)
 - [Decisions](./docs/DECISIONS.md) - Architectural decisions and rationale
 - [Backlog](./docs/BACKLOG.md) - Detailed task checklist
 - [Issues Log](./docs/ISSUES_LOG.md) - Resolved issues and solutions
+- [OAuth Architecture](./docs/OAUTH_ARCHITECTURE.md) - Multi-user auth design
 
 ## Critical Context
 - Using SQLite for MVP (PostgreSQL later)
