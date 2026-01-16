@@ -32,6 +32,9 @@ class Settings:
     APP_SECRET_KEY: str = os.getenv("APP_SECRET_KEY", "dev-secret-change-in-production")
     DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
 
+    # Frontend URL (where to redirect after OAuth)
+    FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:8501")
+
     # Database
     DATABASE_URL: str = os.getenv("DATABASE_URL", f"sqlite:///{BASE_DIR}/data/fantasy.db")
 

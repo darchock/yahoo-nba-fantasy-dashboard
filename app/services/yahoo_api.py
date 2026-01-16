@@ -56,7 +56,7 @@ class YahooAPIService:
             "client_id": settings.YAHOO_CLIENT_ID,
             "redirect_uri": settings.YAHOO_REDIRECT_URI,
             "response_type": "code",
-            "scope": "openid fspt-r",  # openid for user info, fspt-r for fantasy read
+            "scope": "fspt-r",  # fantasy sports read access
             "state": state,
         }
         return f"{cls.OAUTH_AUTHORIZE_URL}?{urlencode(params)}"
