@@ -1,0 +1,74 @@
+"""
+FastAPI backend application entry point.
+"""
+
+from contextlib import asynccontextmanager
+from typing import AsyncGenerator
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.sessions import SessionMiddleware
+
+from app.config import settings
+from app.database.connection import engine
+from app.database.models import Base
+from backend.routes import auth, api
+from backend.routes.auth import callback as oauth_callback
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """Application lifespan handler - runs on startup and shutdown."""
+    # Startup: Create database tables
+    Base.metadata.create_all(bind=engine)
+    yield
+    # Shutdown: cleanup if needed
+
+
+app = FastAPI(
+    title="Yahoo Fantasy Dashboard API",
+    description="Backend API for Yahoo Fantasy Basketball Dashboard",
+    version="0.1.0",
+    lifespan=lifespan,
+)
+
+# CORS middleware - allow Streamlit frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:8501",  # Streamlit default
+        "http://127.0.0.1:8501",
+        "https://*.streamlit.app",  # Streamlit Cloud
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Session middleware for OAuth state
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.APP_SECRET_KEY,
+    max_age=3600,  # 1 hour session
+    same_site="lax",
+    https_only=not settings.DEBUG,  # Require HTTPS in production only
+)
+
+# Include routers
+app.include_router(auth.router, prefix="/auth/yahoo", tags=["auth"])
+app.include_router(api.router, prefix="/api", tags=["api"])
+
+# OAuth callback at root level (to match Yahoo's redirect URI)
+app.get("/callback", tags=["auth"])(oauth_callback)
+
+
+@app.get("/")
+async def root() -> dict:
+    """Root endpoint - health check."""
+    return {"status": "ok", "message": "Yahoo Fantasy Dashboard API"}
+
+
+@app.get("/health")
+async def health_check() -> dict:
+    """Health check endpoint."""
+    return {"status": "healthy"}
