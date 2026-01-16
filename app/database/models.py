@@ -60,7 +60,14 @@ class OAuthToken(Base):
     @property
     def is_expired(self) -> bool:
         """Check if token is expired."""
-        return datetime.now(timezone.utc) >= self.expires_at  # type: ignore[return-value]
+        if self.expires_at is None:
+            return True
+        # Handle both naive and aware datetimes from database
+        expires = self.expires_at
+        if expires.tzinfo is None:
+            # Assume UTC if naive
+            expires = expires.replace(tzinfo=timezone.utc)
+        return datetime.now(timezone.utc) >= expires
 
 
 class UserLeague(Base):
@@ -109,7 +116,12 @@ class CachedData(Base):
         """Check if cached data is expired."""
         if self.expires_at is None:
             return False
-        return datetime.now(timezone.utc) >= self.expires_at  # type: ignore[return-value]
+        # Handle both naive and aware datetimes from database
+        expires = self.expires_at
+        if expires.tzinfo is None:
+            # Assume UTC if naive
+            expires = expires.replace(tzinfo=timezone.utc)
+        return datetime.now(timezone.utc) >= expires
 
 
 # Pick-a-Winner Game Models
