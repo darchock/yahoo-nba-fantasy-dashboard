@@ -12,11 +12,12 @@ The original CLI tool is at: `C:\Users\darch\Projects\Yahoo_NBA_Fantasy_Hub`
 
 ## Current Phase
 **Phase 1: Database & Multi-User Foundation** - COMPLETE
-**Phase 2: FastAPI Backend** - Up next
+**Phase 2: FastAPI Backend** - COMPLETE
+**Phase 3: Streamlit Dashboard** - Up next
 
 ## Phase Order (Updated)
-1. Database & Multi-User Foundation
-2. FastAPI Backend
+1. Database & Multi-User Foundation - COMPLETE
+2. FastAPI Backend - COMPLETE
 3. Streamlit Dashboard
 4. Refactor Visualizations
 5. Scheduled Data Refresh
@@ -25,7 +26,7 @@ The original CLI tool is at: `C:\Users\darch\Projects\Yahoo_NBA_Fantasy_Hub`
 8. Pick-a-Winner Game (post-launch enhancement)
 
 ## Current Task
-Ready to start Phase 2: FastAPI Backend (OAuth endpoints, API routes)
+Ready to start Phase 3: Streamlit Dashboard (login, league selector, data display)
 
 ## Quick Links
 - [Work Plan](./work_plan.md) - High-level roadmap and architecture

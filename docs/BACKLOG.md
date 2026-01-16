@@ -27,16 +27,16 @@ Legend: `[ ]` pending | `[x]` done | `[~]` in progress | `[-]` skipped
 ## Phase 2: FastAPI Backend
 
 ### OAuth Flow
-- [ ] Create backend/main.py (FastAPI app entry)
-- [ ] Create backend/routes/auth.py (/login, /callback, /logout)
-- [ ] Test complete OAuth flow with Yahoo
+- [x] Create backend/main.py (FastAPI app entry)
+- [x] Create backend/routes/auth.py (/login, /callback, /logout)
+- [x] Test complete OAuth flow with Yahoo
 
 ### API Endpoints
-- [ ] Create backend/routes/api.py
-- [ ] GET /api/user/leagues
-- [ ] GET /api/league/{id}/scoreboard/{week}
-- [ ] GET /api/league/{id}/standings/{week}
-- [ ] Test all endpoints with curl/Postman
+- [x] Create backend/routes/api.py
+- [x] GET /api/user/leagues
+- [x] GET /api/league/{id}/scoreboard/{week}
+- [x] GET /api/league/{id}/standings/{week}
+- [x] Test all endpoints with curl/Postman
 
 ---
 

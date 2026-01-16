@@ -95,6 +95,96 @@ None
 
 ---
 
+## Session 2 - 2026-01-16
+
+### Completed
+
+**Phase 2: FastAPI Backend - COMPLETE**
+
+**OAuth Flow:**
+- Created `backend/main.py` (FastAPI app entry with lifespan, CORS, session middleware)
+- Created `backend/routes/auth.py` (OAuth endpoints: /login, /callback, /logout, /me, /status)
+- Added `/callback` route at root level to match Yahoo's registered redirect URI
+- Implemented full OAuth flow with Yahoo:
+  - Generate authorization URL with CSRF state token
+  - Exchange authorization code for tokens
+  - Fetch user GUID via Yahoo API
+  - Create/update user and tokens in database
+  - Set session and redirect to frontend
+
+**API Endpoints:**
+- Created `backend/routes/api.py` with authenticated endpoints:
+  - `GET /api/user/leagues` - List user's leagues (with sync option)
+  - `GET /api/league/{key}/info` - League metadata
+  - `GET /api/league/{key}/teams` - Teams in league
+  - `GET /api/league/{key}/standings` - League standings
+  - `GET /api/league/{key}/scoreboard` - Weekly scoreboard
+  - `GET /api/league/{key}/transactions` - League transactions
+  - `GET /api/league/{key}/matchups` - Weekly matchups
+
+**Configuration Updates:**
+- Added `FRONTEND_URL` to config for environment-specific redirects
+- Updated `.env` and `.env.example` with SSL redirect URI
+- Generated self-signed SSL certificate for local HTTPS development
+- Added `*.pem` to `.gitignore`
+
+**Bug Fixes:**
+- Fixed timezone-naive vs timezone-aware datetime comparison in `is_expired` and `is_stale` properties
+- Added `itsdangerous` to requirements.txt for session middleware
+- Changed OAuth scope from `openid fspt-r` to `fspt-r` to match CLI app
+- Added fallback to fetch user GUID via API when not in token response
+
+**Documentation:**
+- Created `docs/OAUTH_ARCHITECTURE.md` explaining multi-user auth design
+- Added to CLAUDE.md quick links
+- Updated DECISIONS.md with SSL and FRONTEND_URL decisions
+- Updated ISSUES_LOG.md with 4 new issues and solutions
+
+### Files Created/Modified
+```
+backend/
+├── main.py              # NEW - FastAPI app entry
+└── routes/
+    ├── auth.py          # NEW - OAuth endpoints
+    └── api.py           # NEW - Data API endpoints
+
+app/
+├── config.py            # MODIFIED - Added FRONTEND_URL
+├── database/models.py   # MODIFIED - Fixed timezone handling
+└── services/yahoo_api.py # MODIFIED - Changed scope to fspt-r
+
+docs/
+├── OAUTH_ARCHITECTURE.md # NEW - Auth design docs
+├── DECISIONS.md         # MODIFIED - Added decisions 7-8
+├── ISSUES_LOG.md        # MODIFIED - Added issues 7-10
+└── PROGRESS.md          # MODIFIED - This file
+
+.env                     # MODIFIED - SSL redirect, FRONTEND_URL
+.env.example             # MODIFIED - Updated examples
+.gitignore               # MODIFIED - Added *.pem
+requirements.txt         # MODIFIED - Added itsdangerous
+cert.pem, key.pem        # NEW - SSL certificates (gitignored)
+```
+
+### Current State
+- **Phase 1: COMPLETE**
+- **Phase 2: COMPLETE**
+- All OAuth and API endpoints tested and working
+- User authenticated, leagues fetched from Yahoo API
+
+### Blockers
+None
+
+### Next Session
+- Begin Phase 3: Streamlit Dashboard
+  - Create `dashboard/app.py` (main Streamlit entry)
+  - Implement Yahoo OAuth login button
+  - Create league selector dropdown
+  - Create week picker
+  - Display basic league data
+
+---
+
 <!-- Template for new sessions:
 
 ## Session N - YYYY-MM-DD

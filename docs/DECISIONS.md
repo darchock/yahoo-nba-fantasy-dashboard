@@ -130,6 +130,67 @@ Reorder phases: Dashboard and Visualizations come before Scheduler.
 
 ---
 
+## Decision 7: Self-Signed SSL for Local Development
+
+**Date:** 2026-01-16
+**Status:** Decided
+
+**Context:**
+Yahoo OAuth requires HTTPS for all redirect URIs, including localhost development. Options considered:
+1. Use ngrok to create public HTTPS URL
+2. Self-signed SSL certificate with uvicorn
+3. Reverse proxy with nginx/caddy
+
+**Decision:**
+Use self-signed SSL certificate for local development.
+
+**Implementation:**
+```bash
+# Generate certificate
+openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -nodes -subj "//CN=localhost"
+
+# Run uvicorn with SSL
+uvicorn backend.main:app --host localhost --port 8080 --ssl-keyfile key.pem --ssl-certfile cert.pem --reload
+```
+
+**Rationale:**
+- Simplest solution that works locally
+- No external dependencies (ngrok requires account)
+- Matches Yahoo's registered redirect URI (`https://localhost:8080/callback`)
+- Certificate files gitignored for security
+- Can revisit for production (use real certificates)
+
+---
+
+## Decision 8: Configurable Frontend Redirect URL
+
+**Date:** 2026-01-16
+**Status:** Decided
+
+**Context:**
+After OAuth callback, need to redirect user somewhere. This destination differs by environment:
+- Development: API endpoint to verify auth works
+- Production: Streamlit dashboard URL
+
+**Decision:**
+Add `FRONTEND_URL` environment variable for configurable post-OAuth redirect.
+
+**Configuration:**
+```env
+# Development
+FRONTEND_URL=https://localhost:8080/auth/yahoo/me
+
+# Production (Streamlit Cloud)
+FRONTEND_URL=https://your-app.streamlit.app
+```
+
+**Rationale:**
+- Single code path, environment-driven behavior
+- Easy to change without code modifications
+- Documented in `.env.example`
+
+---
+
 <!-- Template for new decisions:
 
 ## Decision N: Title

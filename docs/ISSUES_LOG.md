@@ -176,6 +176,111 @@ from typing import Any, Dict, List, Optional
 
 ---
 
+---
+
+## Session 2 - 2026-01-16
+
+### Issue 7: Yahoo OAuth requires HTTPS for redirect URI
+
+**Symptoms:**
+Yahoo Developer Console rejected `http://localhost:8000/auth/yahoo/callback` - alert stated redirect URI must be HTTPS.
+
+**Cause:**
+Yahoo OAuth security requirement - all redirect URIs must use HTTPS, even for localhost development.
+
+**Solution:**
+1. Generate self-signed SSL certificate:
+   ```bash
+   openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -nodes -subj "//CN=localhost"
+   ```
+2. Run uvicorn with SSL:
+   ```bash
+   uvicorn backend.main:app --host localhost --port 8080 --ssl-keyfile key.pem --ssl-certfile cert.pem --reload
+   ```
+3. Update `.env` to match Yahoo's registered redirect URI:
+   ```
+   YAHOO_REDIRECT_URI=https://localhost:8080/callback
+   ```
+4. Add `*.pem` to `.gitignore`
+
+**Lesson:** Check OAuth provider requirements early. Yahoo requires HTTPS even for development.
+
+---
+
+### Issue 8: Missing `itsdangerous` dependency for SessionMiddleware
+
+**Symptoms:**
+```
+ModuleNotFoundError: No module named 'itsdangerous'
+```
+
+**Cause:**
+Starlette's SessionMiddleware depends on `itsdangerous` for signing session cookies, but it wasn't in requirements.txt.
+
+**Solution:**
+Add to requirements.txt:
+```
+itsdangerous>=2.1.0
+```
+
+**Lesson:** Test imports after adding new middleware to catch missing transitive dependencies.
+
+---
+
+### Issue 9: Timezone-naive vs timezone-aware datetime comparison
+
+**Symptoms:**
+```
+TypeError: can't compare offset-naive and offset-aware datetimes
+```
+Error occurred in `OAuthToken.is_expired` property when comparing `datetime.now(timezone.utc)` with `self.expires_at`.
+
+**Cause:**
+SQLite stores datetimes without timezone info (naive). When reading back, `expires_at` is naive, but we compare with `datetime.now(timezone.utc)` which is timezone-aware.
+
+**Solution:**
+Handle both naive and aware datetimes in the property:
+```python
+@property
+def is_expired(self) -> bool:
+    if self.expires_at is None:
+        return True
+    expires = self.expires_at
+    if expires.tzinfo is None:
+        # Assume UTC if naive
+        expires = expires.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) >= expires
+```
+
+**Lesson:** SQLite doesn't preserve timezone info. Always handle potential naive datetimes when reading from database.
+
+---
+
+### Issue 10: Yahoo doesn't return user GUID with `fspt-r` scope only
+
+**Symptoms:**
+```
+{"detail":"Could not get Yahoo user identifier from token response"}
+```
+
+**Cause:**
+Initially used `openid fspt-r` scope expecting Yahoo to return `xoauth_yahoo_guid` in token response. Changed to `fspt-r` only (matching CLI app), but then GUID wasn't in response.
+
+**Solution:**
+After token exchange, make a separate API call to fetch user info:
+```python
+response = await client.get(
+    "https://fantasysports.yahooapis.com/fantasy/v2/users;use_login=1",
+    headers={"Authorization": f"Bearer {token_data['access_token']}"},
+    params={"format": "json"},
+)
+yahoo_guid = safe_get(response.json(), "fantasy_content", "users", "0", "user", 0, "guid")
+```
+
+**Lesson:** Don't assume OAuth token responses contain all user info. May need additional API calls.
+
+---
+
 ## Prevention Checklist
 
 Before marking any task complete:
