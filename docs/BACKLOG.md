@@ -40,22 +40,7 @@ Legend: `[ ]` pending | `[x]` done | `[~]` in progress | `[-]` skipped
 
 ---
 
-## Phase 3: Scheduled Data Refresh (CORE)
-
-### Scheduler Setup
-- [ ] Create app/services/scheduler.py (APScheduler with FastAPI)
-- [ ] Create app/jobs/refresh_data.py (data fetching logic)
-- [ ] Add job status/logs table to database
-
-### Jobs
-- [ ] Implement daily_refresh job (scores, standings for active leagues)
-- [ ] Implement weekly_refresh job (full sync, cleanup old cache)
-- [ ] Implement on_demand refresh (manual trigger from API)
-- [ ] Test scheduler runs correctly
-
----
-
-## Phase 4: Streamlit Dashboard
+## Phase 3: Streamlit Dashboard
 
 ### Core Dashboard
 - [ ] Create dashboard/app.py (main entry)
@@ -72,7 +57,7 @@ Legend: `[ ]` pending | `[x]` done | `[~]` in progress | `[-]` skipped
 
 ---
 
-## Phase 5: Refactor Visualizations
+## Phase 4: Refactor Visualizations
 
 ### Convert to Plotly
 - [ ] Adapt totals_table.py -> Plotly figure
@@ -81,6 +66,21 @@ Legend: `[ ]` pending | `[x]` done | `[~]` in progress | `[-]` skipped
 - [ ] Adapt standings_bump_chart.py -> Plotly line chart
 - [ ] Adapt transactions.py -> Plotly bar charts
 - [ ] Copy/adapt helper functions (RTL text, color gradients)
+
+---
+
+## Phase 5: Scheduled Data Refresh
+
+### Scheduler Setup
+- [ ] Create app/services/scheduler.py (APScheduler with FastAPI)
+- [ ] Create app/jobs/refresh_data.py (data fetching logic)
+- [ ] Add job status/logs table to database
+
+### Jobs
+- [ ] Implement daily_refresh job (scores, standings for active leagues)
+- [ ] Implement weekly_refresh job (full sync, cleanup old cache)
+- [ ] Implement on_demand refresh (manual trigger from API)
+- [ ] Test scheduler runs correctly
 
 ---
 

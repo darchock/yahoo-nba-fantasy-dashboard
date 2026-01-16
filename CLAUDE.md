@@ -17,9 +17,9 @@ The original CLI tool is at: `C:\Users\darch\Projects\Yahoo_NBA_Fantasy_Hub`
 ## Phase Order (Updated)
 1. Database & Multi-User Foundation
 2. FastAPI Backend
-3. Scheduled Data Refresh (CORE - before deployment!)
-4. Streamlit Dashboard
-5. Refactor Visualizations
+3. Streamlit Dashboard
+4. Refactor Visualizations
+5. Scheduled Data Refresh
 6. Remove Hardcoded Data
 7. Deployment
 8. Pick-a-Winner Game (post-launch enhancement)

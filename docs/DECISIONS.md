@@ -101,6 +101,35 @@ Before marking any task complete, always run both runtime tests AND check Pylanc
 
 ---
 
+## Decision 6: Phase Order - Dashboard Before Scheduler
+
+**Date:** 2026-01-16
+**Status:** Decided
+
+**Context:**
+Original plan had Scheduled Data Refresh (Phase 3) before Streamlit Dashboard (Phase 4). This meant building automation before having a visible product.
+
+**Decision:**
+Reorder phases: Dashboard and Visualizations come before Scheduler.
+
+**New order:**
+1. Database & Multi-User Foundation (done)
+2. FastAPI Backend
+3. Streamlit Dashboard
+4. Refactor Visualizations
+5. Scheduled Data Refresh
+6. Remove Hardcoded Data
+7. Deployment
+8. Pick-a-Winner Game
+
+**Rationale:**
+- Get a visible, usable product sooner
+- Can test and iterate on UI with manually-refreshed or mock data
+- Scheduler is an enhancement, not a blocker for basic functionality
+- Easier to demonstrate progress to stakeholders
+
+---
+
 <!-- Template for new decisions:
 
 ## Decision N: Title
