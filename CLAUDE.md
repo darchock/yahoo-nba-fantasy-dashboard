@@ -13,7 +13,7 @@ The original CLI tool is at: `C:\Users\darch\Projects\Yahoo_NBA_Fantasy_Hub`
 ## Current Phase
 **Phase 1: Database & Multi-User Foundation** - COMPLETE
 **Phase 2: FastAPI Backend** - COMPLETE
-**Phase 3: Streamlit Dashboard** - Up next
+**Phase 3: Streamlit Dashboard** - IN PROGRESS
 
 ## Phase Order (Updated)
 1. Database & Multi-User Foundation - COMPLETE
@@ -65,5 +65,9 @@ Common Pylance issues in this project:
 - `datetime.utcnow()` deprecated → use `datetime.now(timezone.utc)`
 - Import not resolved → VS Code needs correct Python interpreter selected
 
-## Quick Links
-- [Issues Log](./docs/ISSUES_LOG.md) - Resolved issues and solutions
+## Git Commit Rules
+When committing changes:
+1. **Logical separation** - Group related changes into separate commits
+2. **Concise messages** - Informative yet brief commit messages
+3. **No co-author tags** - Do NOT add "Co-Authored-By: Claude" or similar
+4. **Use conventional format** - Start with verb (Add, Fix, Update, Refactor, etc.)

@@ -43,17 +43,23 @@ Legend: `[ ]` pending | `[x]` done | `[~]` in progress | `[-]` skipped
 ## Phase 3: Streamlit Dashboard
 
 ### Core Dashboard
-- [ ] Create dashboard/app.py (main entry)
-- [ ] Implement Yahoo OAuth login button
-- [ ] Create league selector dropdown
-- [ ] Create week picker
+- [x] Create dashboard/app.py (main entry)
+- [x] Implement Yahoo OAuth login button
+- [x] Create league selector dropdown
+- [x] Create week picker
 - [ ] Add "Last updated" indicator with manual refresh button
 
 ### Pages
-- [ ] dashboard/pages/home.py (league overview)
+- [x] dashboard/pages/home.py (league overview)
 - [ ] dashboard/pages/weekly.py (weekly visualizations)
 - [ ] dashboard/pages/trends.py (bump chart, trends)
 - [ ] dashboard/pages/transactions.py (transaction analysis)
+
+### Authentication (Added Session 3)
+- [x] Implement JWT token-based auth for Streamlit
+- [x] Create secure auth code exchange flow
+- [x] Add AuthCode database model
+- [x] Add /auth/yahoo/exchange endpoint
 
 ---
 

@@ -185,6 +185,95 @@ None
 
 ---
 
+## Session 3 - 2026-01-20
+
+### Completed
+
+**Phase 3: Streamlit Dashboard - STARTED**
+
+**Streamlit Dashboard Core:**
+- Created `dashboard/app.py` (main Streamlit entry point)
+- Implemented login page with Yahoo OAuth button
+- Created sidebar with league selector dropdown and week picker
+- Created `dashboard/pages/home.py` with league overview (standings display)
+
+**Secure Authentication Flow:**
+- Refactored auth to support both session-based (browser) and JWT token-based (Streamlit) authentication
+- Implemented secure authorization code exchange flow:
+  1. OAuth callback generates short-lived auth code (60 sec, single-use)
+  2. Stores auth code in database (`auth_codes` table)
+  3. Redirects to Streamlit with code in URL
+  4. Streamlit exchanges code for JWT via POST `/auth/yahoo/exchange`
+  5. JWT stored in `st.session_state` for API calls
+- Added `AuthCode` model to database for secure code storage
+- Added Bearer token support to all API endpoints
+
+**Configuration Improvements:**
+- Added detailed documentation to `.env` file explaining each variable
+- Moved `API_BASE_URL` from hardcoded to environment variable
+- Added `VERIFY_SSL` setting for local dev with self-signed certs
+- Regenerated SSL certificates for HTTPS on port 8080
+
+**Project Structure:**
+- Created `pyproject.toml` for proper Python package management
+- Project now installable via `pip install -e .` for clean imports
+- Fixed import issues between `dashboard`, `app`, and `backend` packages
+
+**Bug Fixes:**
+- Fixed `require_auth` dependency injection (was calling function directly instead of using `Depends()`)
+- Fixed SSL certificate issues for local HTTPS development
+
+### Files Created/Modified
+```
+dashboard/
+├── app.py               # NEW - Main Streamlit application
+└── pages/
+    └── home.py          # NEW - League overview page
+
+backend/routes/
+├── auth.py              # MODIFIED - Added JWT tokens, auth code exchange
+└── api.py               # MODIFIED - Fixed dependency injection
+
+app/database/
+└── models.py            # MODIFIED - Added AuthCode model
+
+pyproject.toml           # NEW - Package configuration
+.env                     # MODIFIED - Added API_BASE_URL, VERIFY_SSL, documentation
+cert.pem, key.pem        # REGENERATED - New SSL certificates
+```
+
+### Current State
+- **Phase 1: COMPLETE**
+- **Phase 2: COMPLETE**
+- **Phase 3: IN PROGRESS**
+  - OAuth flow working end-to-end ✓
+  - Login button → Yahoo → callback → Streamlit dashboard ✓
+  - League selector in sidebar ✓
+  - Basic standings display ✓
+  - Remaining: visualizations, more pages
+
+### How to Run (Local Development)
+```bash
+# Terminal 1 - FastAPI Backend
+cd C:\Users\darch\Projects\yahoo-nba-fantasy-dashboard
+venv\Scripts\python.exe -m uvicorn backend.main:app --host localhost --port 8080 --ssl-keyfile key.pem --ssl-certfile cert.pem --reload
+
+# Terminal 2 - Streamlit Dashboard
+cd C:\Users\darch\Projects\yahoo-nba-fantasy-dashboard
+venv\Scripts\streamlit.exe run dashboard/app.py --server.port 8501
+```
+
+### Blockers
+None
+
+### Next Session
+- Sync leagues from Yahoo (click 🔄 button)
+- Display league standings with proper formatting
+- Add scoreboard visualization
+- Add matchup display
+
+---
+
 <!-- Template for new sessions:
 
 ## Session N - YYYY-MM-DD

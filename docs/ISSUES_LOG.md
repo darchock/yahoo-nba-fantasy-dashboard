@@ -281,6 +281,103 @@ yahoo_guid = safe_get(response.json(), "fantasy_content", "users", "0", "user", 
 
 ---
 
+## Session 3 - 2026-01-20
+
+### Issue 11: Session-based auth doesn't work across separate services
+
+**Symptoms:**
+Streamlit (port 8501) couldn't access FastAPI's session-based auth (port 8080) - API calls returned 401 Unauthorized.
+
+**Cause:**
+FastAPI's SessionMiddleware stores session data in cookies scoped to the FastAPI domain. When Streamlit's Python code makes HTTP requests to FastAPI, it doesn't have access to the browser's cookies.
+
+**Solution:**
+Implemented dual authentication:
+1. **JWT tokens** for Streamlit/API clients (stateless, passed in `Authorization: Bearer` header)
+2. **Session cookies** kept for direct browser access (Swagger UI, testing)
+
+Added secure auth code exchange flow:
+- OAuth callback generates short-lived auth code (60 sec, single-use, stored in DB)
+- Redirect to Streamlit with code in URL (not JWT - security)
+- Streamlit exchanges code for JWT via API call
+- JWT stored in `st.session_state`
+
+**Lesson:** When building separate frontend/backend services, use token-based auth instead of session cookies.
+
+---
+
+### Issue 12: SSL certificate errors with self-signed certs
+
+**Symptoms:**
+```
+ERR_SSL_PROTOCOL_ERROR
+```
+Browser refused to load `https://localhost:8080`.
+
+**Cause:**
+Self-signed certificate was malformed or generated with wrong parameters.
+
+**Solution:**
+Regenerate certificate with proper parameters:
+```bash
+openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -sha256 -days 365 -nodes -subj "//CN=localhost"
+```
+Note: Double slash `//CN=localhost` needed on Windows/Git Bash to prevent path conversion.
+
+**Lesson:** On Windows with Git Bash, escape forward slashes in OpenSSL commands.
+
+---
+
+### Issue 13: FastAPI dependency injection not working when calling function directly
+
+**Symptoms:**
+```
+AttributeError: 'Depends' object has no attribute 'credentials'
+```
+
+**Cause:**
+`require_auth` function called `get_current_user(request, db)` directly, bypassing FastAPI's dependency injection. The `credentials` parameter (which has `= Depends(bearer_scheme)`) received the `Depends` object itself instead of the resolved value.
+
+**Solution:**
+Change `require_auth` to use `Depends()`:
+```python
+# Before (wrong)
+def require_auth(request: Request, db: Session = Depends(get_db)) -> User:
+    user = get_current_user(request, db)  # Bypasses DI!
+
+# After (correct)
+def require_auth(user: Optional[User] = Depends(get_current_user)) -> User:
+    if not user:
+        raise HTTPException(status_code=401)
+    return user
+```
+
+**Lesson:** Never call FastAPI dependency functions directly. Always use `Depends()` to let FastAPI handle injection.
+
+---
+
+### Issue 14: Module import errors when running Streamlit
+
+**Symptoms:**
+```
+ModuleNotFoundError: No module named 'dashboard'
+```
+
+**Cause:**
+When running `streamlit run dashboard/app.py`, Python doesn't know about the project's package structure. The `dashboard`, `app`, and `backend` folders aren't recognized as importable packages.
+
+**Solution:**
+Create `pyproject.toml` and install package in development mode:
+```bash
+pip install -e .
+```
+
+This registers the project folders as importable packages without copying files.
+
+**Lesson:** For projects with multiple packages that import each other, use `pyproject.toml` and `pip install -e .` instead of `sys.path` hacks.
+
+---
+
 ## Prevention Checklist
 
 Before marking any task complete:
