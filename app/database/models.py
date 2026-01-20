@@ -193,6 +193,21 @@ class PredictionStandings(Base):
         return (self.total_correct / self.total_predictions) * 100  # type: ignore[return-value]
 
 
+# Authentication Models
+
+class AuthCode(Base):
+    """Short-lived authorization codes for OAuth redirect flow."""
+
+    __tablename__ = "auth_codes"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(String(64), unique=True, nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    used = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
 # Scheduler Models
 
 class JobLog(Base):

@@ -15,14 +15,13 @@ from backend.routes.auth import get_current_user
 router = APIRouter()
 
 
-def require_auth(request: Request, db: Session = Depends(get_db)) -> User:
+def require_auth(user: Optional[User] = Depends(get_current_user)) -> User:
     """
     Dependency that requires authentication.
 
     Raises:
         HTTPException: If user is not authenticated
     """
-    user = get_current_user(request, db)
     if not user:
         raise HTTPException(status_code=401, detail="Not authenticated")
     return user
