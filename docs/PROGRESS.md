@@ -457,6 +457,97 @@ Focus: Transactions Page and Polish
 
 ---
 
+## Session 6 - 2026-01-22
+
+### Completed
+
+**Dashboard UX Improvements:**
+- Renamed `pages/` folder to `views/` to avoid Streamlit auto-detection conflict
+- Added sidebar page navigation (Home/Weekly) replacing tabs
+- Removed redundant UI elements (sync button, user info display, refresh buttons)
+- Weekly page now waits for user to select week before fetching data
+- Limited week selection to 1-19 (regular season only)
+- Changed week picker from number input to selectbox dropdown
+
+**Weekly Analysis Tabs - New Features:**
+All tabs fetch pre-parsed data from server-side API endpoints.
+
+1. **Totals Tab** (new)
+   - Created `parse_weekly_totals()` in `app/parsing/scoreboard.py`
+   - Added `GET /api/league/{key}/weekly-totals` endpoint
+   - Displays all teams' stats for selected week in table format
+
+2. **Rankings Tab** (new)
+   - Created `parse_weekly_rankings()` in `app/parsing/scoreboard.py`
+   - Added `GET /api/league/{key}/weekly-rankings` endpoint
+   - Ranks teams (1=best) for each stat category with average rank
+   - Styled: green for rank 1, red for last place
+
+3. **Head-to-Head Matrix Tab** (new)
+   - Created `simulate_matchup()` and `parse_head_to_head_matrix()` in `app/parsing/scoreboard.py`
+   - Added `GET /api/league/{key}/weekly-h2h` endpoint
+   - Simulates cross-league matchups: how each team would fare vs every other team
+   - Displays W-L-T for each pair, total record, and Win%
+   - Sorted by win percentage (best first)
+   - Styled: green for Win% ≥60%, red for <45%
+
+**Architecture:**
+- All data parsing happens server-side in FastAPI
+- Streamlit client only renders pre-parsed data from API
+- All new endpoints reuse cached scoreboard data (no extra API calls to Yahoo)
+
+### Files Created/Modified
+```
+dashboard/
+├── main.py                    # MODIFIED - Updated imports, removed UI clutter
+└── views/                     # RENAMED from pages/
+    ├── __init__.py
+    ├── home.py                # MODIFIED - Removed Quick Navigation section
+    └── weekly.py              # MODIFIED - Added 4 tabs, fetch from new endpoints
+
+app/parsing/
+└── scoreboard.py              # MODIFIED - Added totals, rankings, H2H parsing
+
+backend/routes/
+└── api.py                     # MODIFIED - Added 3 new endpoints
+```
+
+### API Endpoints Added
+- `GET /api/league/{key}/weekly-totals?week=N` - All teams' weekly stats
+- `GET /api/league/{key}/weekly-rankings?week=N` - Team rankings per category
+- `GET /api/league/{key}/weekly-h2h?week=N` - Head-to-head matrix
+
+### Current State
+- **Phase 1: COMPLETE**
+- **Phase 2: COMPLETE**
+- **Phase 3: IN PROGRESS**
+  - OAuth flow working ✓
+  - League selector ✓
+  - Standings with stats display ✓
+  - Weekly scoreboard page ✓
+  - Weekly totals tab ✓
+  - Weekly rankings tab ✓
+  - Weekly H2H matrix tab ✓
+  - Data caching with freshness indicator ✓
+  - Logging utilities ✓
+  - Remaining: transactions page, trend visualizations
+
+### Blockers
+None
+
+### Next Session (Session 7)
+Focus: Transactions Page and Trend Visualizations
+
+1. **Create transactions page**
+   - Parse transaction data from Yahoo API
+   - Display recent adds, drops, trades
+
+2. **Add trend visualizations**
+   - Standings bump chart over time
+   - Category performance trends
+
+---
+
 <!-- Template for new sessions:
 
 ## Session N - YYYY-MM-DD

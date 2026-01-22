@@ -47,13 +47,13 @@ Legend: `[ ]` pending | `[x]` done | `[~]` in progress | `[-]` skipped
 - [x] Implement Yahoo OAuth login button
 - [x] Create league selector dropdown
 - [x] Create week picker
-- [ ] Add "Last updated" indicator with manual refresh button
+- [x] Add "Last updated" indicator with manual refresh button
 
 ### Pages
-- [x] dashboard/pages/home.py (league overview)
-- [ ] dashboard/pages/weekly.py (weekly visualizations)
-- [ ] dashboard/pages/trends.py (bump chart, trends)
-- [ ] dashboard/pages/transactions.py (transaction analysis)
+- [x] dashboard/views/home.py (league overview) - renamed from pages/
+- [x] dashboard/views/weekly.py (weekly visualizations) - renamed from pages/
+- [ ] dashboard/views/trends.py (bump chart, trends)
+- [ ] dashboard/views/transactions.py (transaction analysis)
 
 ### Authentication (Added Session 3)
 - [x] Implement JWT token-based auth for Streamlit
@@ -71,31 +71,33 @@ Legend: `[ ]` pending | `[x]` done | `[~]` in progress | `[-]` skipped
 - [x] Create tests for logging utilities (22 tests passing)
 
 ### Standings Display (Session 5)
-- [ ] Adapt standings parsing from CLI repo
-- [ ] Display formatted standings table with proper columns
-- [ ] Add team names, records, points, ranks
+- [x] Adapt standings parsing from CLI repo
+- [x] Display formatted standings table with proper columns
+- [x] Add team names, records, points, ranks
 
-### Weekly Visualizations (Session 5)
-- [ ] Create dashboard/pages/weekly.py
-- [ ] Display scoreboard for selected week
-- [ ] Show matchup results and scores
-- [ ] Add basic visualizations (tables/charts)
+### Weekly Visualizations (Sessions 5-6)
+- [x] Create dashboard/views/weekly.py
+- [x] Display scoreboard for selected week
+- [x] Show matchup results and scores
+- [x] Add Totals tab (all teams' weekly stats)
+- [x] Add Rankings tab (team ranks per category)
+- [x] Add Head-to-Head matrix tab (cross-league matchups)
 
 ### Data Caching (Session 5)
-- [ ] Implement caching service using CachedData model
-- [ ] Cache standings, scoreboard, and other API responses
-- [ ] Add "Last updated: X ago" indicator in sidebar/header
-- [ ] Add manual refresh button to fetch fresh data on demand
-- [ ] Serve from cache when data is recent (configurable staleness threshold)
+- [x] Implement caching service using CachedData model
+- [x] Cache standings, scoreboard, and other API responses
+- [x] Add "Last updated: X ago" indicator in sidebar/header
+- [x] Add manual refresh button to fetch fresh data on demand
+- [x] Serve from cache when data is recent (configurable staleness threshold)
 
 ---
 
 ## Phase 4: Refactor Visualizations
 
 ### Convert to Plotly
-- [ ] Adapt totals_table.py -> Plotly figure
-- [ ] Adapt ranking_table.py -> Plotly figure
-- [ ] Adapt head_to_head.py -> Plotly heatmap
+- [x] Adapt totals_table.py -> Streamlit dataframe (Session 6)
+- [x] Adapt ranking_table.py -> Streamlit styled dataframe (Session 6)
+- [x] Adapt head_to_head.py -> Streamlit styled dataframe (Session 6)
 - [ ] Adapt standings_bump_chart.py -> Plotly line chart
 - [ ] Adapt transactions.py -> Plotly bar charts
 - [ ] Copy/adapt helper functions (RTL text, color gradients)

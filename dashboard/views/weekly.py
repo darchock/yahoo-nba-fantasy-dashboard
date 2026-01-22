@@ -161,7 +161,45 @@ def render_matchup_card(matchup: dict) -> None:
     st.dataframe(styled_df, use_container_width=True, hide_index=True)
 
 
-def render_scoreboard_tab(
+def fetch_api_data(
+    api_base_url: str,
+    auth_token: str,
+    endpoint: str,
+    params: dict,
+    verify_ssl: bool = False,
+) -> dict | None:
+    """
+    Fetch data from an API endpoint.
+
+    Args:
+        api_base_url: Base URL for the API
+        auth_token: JWT authentication token
+        endpoint: API endpoint path
+        params: Query parameters
+        verify_ssl: Whether to verify SSL certificates
+
+    Returns:
+        Response data dict or None if error
+    """
+    try:
+        headers = {"Authorization": f"Bearer {auth_token}"}
+
+        with httpx.Client(base_url=api_base_url, headers=headers, verify=verify_ssl, timeout=30.0) as client:
+            response = client.get(endpoint, params=params)
+            if response.status_code == 200:
+                return response.json()
+            elif response.status_code == 401:
+                st.error("Session expired. Please log in again.")
+                return None
+            else:
+                st.error(f"Failed to fetch data: {response.status_code}")
+                return None
+    except Exception as e:
+        st.error(f"Error fetching data: {e}")
+        return None
+
+
+def render_totals_tab(
     api_base_url: str,
     auth_token: str,
     league_key: str,
@@ -169,7 +207,177 @@ def render_scoreboard_tab(
     verify_ssl: bool = False,
 ) -> None:
     """
-    Render the scoreboard content.
+    Render the totals table showing all teams' stats for the week.
+
+    Args:
+        api_base_url: Base URL for the API
+        auth_token: JWT authentication token
+        league_key: Yahoo league key
+        week: Week number
+        verify_ssl: Whether to verify SSL certificates
+    """
+    result = fetch_api_data(
+        api_base_url=api_base_url,
+        auth_token=auth_token,
+        endpoint=f"/api/league/{league_key}/weekly-totals",
+        params={"week": week},
+        verify_ssl=verify_ssl,
+    )
+
+    if result is None:
+        return
+
+    data = result.get("data", {})
+    teams = data.get("teams", [])
+    stat_categories = data.get("stat_categories", STAT_CATEGORIES)
+
+    if not teams:
+        st.info("No team data available.")
+        return
+
+    # Build table rows from pre-parsed data
+    rows = []
+    for team in teams:
+        row = {"Team": team.get("team_name", "Unknown")}
+        for stat in stat_categories:
+            row[stat] = team.get(stat, "-")
+        rows.append(row)
+
+    df = pd.DataFrame(rows)
+    st.dataframe(df, use_container_width=True, hide_index=True)
+
+
+def render_rankings_tab(
+    api_base_url: str,
+    auth_token: str,
+    league_key: str,
+    week: int,
+    verify_ssl: bool = False,
+) -> None:
+    """
+    Render the rankings table showing team ranks for each stat category.
+
+    Args:
+        api_base_url: Base URL for the API
+        auth_token: JWT authentication token
+        league_key: Yahoo league key
+        week: Week number
+        verify_ssl: Whether to verify SSL certificates
+    """
+    result = fetch_api_data(
+        api_base_url=api_base_url,
+        auth_token=auth_token,
+        endpoint=f"/api/league/{league_key}/weekly-rankings",
+        params={"week": week},
+        verify_ssl=verify_ssl,
+    )
+
+    if result is None:
+        return
+
+    data = result.get("data", {})
+    teams = data.get("teams", [])
+    stat_categories = data.get("stat_categories", STAT_CATEGORIES)
+    num_teams = data.get("num_teams", len(teams))
+
+    if not teams:
+        st.info("No team data available.")
+        return
+
+    # Build table rows from pre-parsed data
+    rows = []
+    for team in teams:
+        row = {"Team": team.get("team_name", "Unknown")}
+        for stat in stat_categories:
+            row[stat] = team.get(stat, "-")
+        row["Avg Rank"] = team.get("avg_rank", "-")
+        rows.append(row)
+
+    df = pd.DataFrame(rows)
+
+    # Style: highlight rank 1 in green, last rank in red
+    def highlight_ranks(val):
+        if val == 1:
+            return "background-color: #d4edda; font-weight: bold"
+        elif val == num_teams:
+            return "background-color: #f8d7da"
+        return ""
+
+    styled_df = df.style.applymap(highlight_ranks, subset=stat_categories)
+    st.dataframe(styled_df, use_container_width=True, hide_index=True)
+
+
+def render_h2h_tab(
+    api_base_url: str,
+    auth_token: str,
+    league_key: str,
+    week: int,
+    verify_ssl: bool = False,
+) -> None:
+    """
+    Render the head-to-head matrix showing cross-league matchups.
+
+    Args:
+        api_base_url: Base URL for the API
+        auth_token: JWT authentication token
+        league_key: Yahoo league key
+        week: Week number
+        verify_ssl: Whether to verify SSL certificates
+    """
+    result = fetch_api_data(
+        api_base_url=api_base_url,
+        auth_token=auth_token,
+        endpoint=f"/api/league/{league_key}/weekly-h2h",
+        params={"week": week},
+        verify_ssl=verify_ssl,
+    )
+
+    if result is None:
+        return
+
+    data = result.get("data", {})
+    team_names = data.get("team_names", [])
+    matrix = data.get("matrix", [])
+    totals = data.get("totals", [])
+
+    if not team_names or not matrix:
+        st.info("No team data available.")
+        return
+
+    # Build DataFrame for the matrix
+    # Columns: team names + W-L-T + Win%
+    columns = team_names + ["W-L-T", "Win%"]
+
+    rows = []
+    for i, team_name in enumerate(team_names):
+        row_data = matrix[i] + [totals[i]["record"], totals[i]["win_pct"]]
+        rows.append([team_name] + row_data)
+
+    df = pd.DataFrame(rows, columns=["Team"] + columns)
+
+    # Style the Win% column based on value
+    def style_win_pct(val):
+        if not isinstance(val, (int, float)):
+            return ""
+        if val >= 60:
+            return "background-color: #d4edda; font-weight: bold"  # Green
+        elif val < 45:
+            return "background-color: #f8d7da"  # Red
+        return ""
+
+    styled_df = df.style.applymap(style_win_pct, subset=["Win%"])
+    st.dataframe(styled_df, use_container_width=True, hide_index=True)
+
+
+def fetch_scoreboard_data(
+    api_base_url: str,
+    auth_token: str,
+    league_key: str,
+    week: int,
+    verify_ssl: bool = False,
+) -> tuple[list, dict] | None:
+    """
+    Fetch scoreboard data from the API.
 
     Args:
         api_base_url: Base URL for the API
@@ -177,9 +385,10 @@ def render_scoreboard_tab(
         league_key: Yahoo league key
         week: Week number to display
         verify_ssl: Whether to verify SSL certificates
+
+    Returns:
+        Tuple of (matchups list, cache_info dict) or None if error
     """
-    # Fetch scoreboard data from API
-    response_data = None
     try:
         headers = {"Authorization": f"Bearer {auth_token}"}
         params = {"week": week}
@@ -188,29 +397,31 @@ def render_scoreboard_tab(
             response = client.get(f"/api/league/{league_key}/scoreboard", params=params)
             if response.status_code == 200:
                 response_data = response.json()
+                data = response_data.get("data", {})
+                cache_info = response_data.get("cache", {})
+                matchups = data.get("matchups", [])
+                return matchups, cache_info
             elif response.status_code == 401:
                 st.error("Session expired. Please log in again.")
-                return
+                return None
             else:
                 st.error(f"Failed to fetch scoreboard: {response.status_code}")
-                return
+                return None
     except Exception as e:
         st.error(f"Error fetching scoreboard: {e}")
-        return
+        return None
 
-    # Extract data and cache info
-    data = response_data.get("data", {})
-    cache_info = response_data.get("cache", {})
-    matchups = data.get("matchups", [])
 
-    # Cache indicator
-    render_cache_indicator(cache_info)
+def render_scoreboard_tab(matchups: list) -> None:
+    """
+    Render the scoreboard content.
 
+    Args:
+        matchups: List of matchup data from API
+    """
     if not matchups:
         st.info("No matchups found for this week.")
         return
-
-    st.divider()
 
     # Render each matchup
     for i, matchup in enumerate(matchups):
@@ -286,16 +497,36 @@ def render_weekly_page(
             st.caption("End of Regular Season")
 
     if week is None:
-        st.info("Select a week above to view the scoreboard.")
+        st.info("Select a week above to view data.")
         return
+
+    # Fetch data once for all tabs
+    result = fetch_scoreboard_data(
+        api_base_url=api_base_url,
+        auth_token=auth_token,
+        league_key=league_key,
+        week=week,
+        verify_ssl=verify_ssl,
+    )
+
+    if result is None:
+        return
+
+    matchups, cache_info = result
+
+    # Cache indicator
+    render_cache_indicator(cache_info)
 
     st.divider()
 
     # Content tabs
-    tab1, tab2 = st.tabs(["Scoreboard", "Visualizations"])
+    tab1, tab2, tab3, tab4 = st.tabs(["Scoreboard", "Totals", "Rankings", "Head-to-Head"])
 
     with tab1:
-        render_scoreboard_tab(
+        render_scoreboard_tab(matchups)
+
+    with tab2:
+        render_totals_tab(
             api_base_url=api_base_url,
             auth_token=auth_token,
             league_key=league_key,
@@ -303,11 +534,20 @@ def render_weekly_page(
             verify_ssl=verify_ssl,
         )
 
-    with tab2:
-        st.info("Weekly visualizations coming soon...")
-        st.markdown("""
-        **Planned features:**
-        - Category performance charts
-        - Week-over-week trends
-        - Team comparison radar charts
-        """)
+    with tab3:
+        render_rankings_tab(
+            api_base_url=api_base_url,
+            auth_token=auth_token,
+            league_key=league_key,
+            week=week,
+            verify_ssl=verify_ssl,
+        )
+
+    with tab4:
+        render_h2h_tab(
+            api_base_url=api_base_url,
+            auth_token=auth_token,
+            league_key=league_key,
+            week=week,
+            verify_ssl=verify_ssl,
+        )

@@ -14,7 +14,12 @@ from app.database.connection import get_db
 from app.database.models import User, UserLeague, CachedData
 from app.logging_config import get_logger
 from app.parsing.standings import parse_standings
-from app.parsing.scoreboard import parse_scoreboard
+from app.parsing.scoreboard import (
+    parse_scoreboard,
+    parse_weekly_totals,
+    parse_weekly_rankings,
+    parse_head_to_head_matrix,
+)
 from app.services.yahoo_api import YahooAPIService
 from backend.routes.auth import get_current_user
 
@@ -409,6 +414,127 @@ async def get_league_scoreboard(
     return {
         "data": parsed_data,
         "cache": format_cache_metadata(cache),
+    }
+
+
+@router.get("/league/{league_key}/weekly-totals")
+async def get_league_weekly_totals(
+    league_key: str,
+    week: Optional[int] = None,
+    refresh: bool = False,
+    yahoo_service: YahooAPIService = Depends(get_yahoo_service),
+    db: Session = Depends(get_db),
+) -> dict:
+    """
+    Get weekly totals for all teams in the league.
+
+    Returns a table-ready format with each team's stats for the week.
+
+    Args:
+        league_key: Yahoo league key
+        week: Week number (defaults to current week if not specified)
+        refresh: Force refresh from Yahoo API, ignoring cache
+
+    Returns:
+        Parsed totals data with cache metadata
+    """
+    # Get scoreboard data (uses caching)
+    scoreboard_result = await get_league_scoreboard(
+        league_key=league_key,
+        week=week,
+        refresh=refresh,
+        yahoo_service=yahoo_service,
+        db=db,
+    )
+
+    # Parse totals from scoreboard data
+    parsed_scoreboard = scoreboard_result.get("data", {})
+    totals_data = parse_weekly_totals(parsed_scoreboard)
+
+    return {
+        "data": totals_data,
+        "cache": scoreboard_result.get("cache", {}),
+    }
+
+
+@router.get("/league/{league_key}/weekly-rankings")
+async def get_league_weekly_rankings(
+    league_key: str,
+    week: Optional[int] = None,
+    refresh: bool = False,
+    yahoo_service: YahooAPIService = Depends(get_yahoo_service),
+    db: Session = Depends(get_db),
+) -> dict:
+    """
+    Get weekly rankings for all teams in the league.
+
+    Returns rank (1 = best) for each team in each stat category.
+
+    Args:
+        league_key: Yahoo league key
+        week: Week number (defaults to current week if not specified)
+        refresh: Force refresh from Yahoo API, ignoring cache
+
+    Returns:
+        Parsed rankings data with cache metadata
+    """
+    # Get scoreboard data (uses caching)
+    scoreboard_result = await get_league_scoreboard(
+        league_key=league_key,
+        week=week,
+        refresh=refresh,
+        yahoo_service=yahoo_service,
+        db=db,
+    )
+
+    # Parse rankings from scoreboard data
+    parsed_scoreboard = scoreboard_result.get("data", {})
+    rankings_data = parse_weekly_rankings(parsed_scoreboard)
+
+    return {
+        "data": rankings_data,
+        "cache": scoreboard_result.get("cache", {}),
+    }
+
+
+@router.get("/league/{league_key}/weekly-h2h")
+async def get_league_weekly_h2h(
+    league_key: str,
+    week: Optional[int] = None,
+    refresh: bool = False,
+    yahoo_service: YahooAPIService = Depends(get_yahoo_service),
+    db: Session = Depends(get_db),
+) -> dict:
+    """
+    Get head-to-head matrix for all teams in the league.
+
+    Simulates how each team would have performed against every other team
+    based on their weekly stats.
+
+    Args:
+        league_key: Yahoo league key
+        week: Week number (defaults to current week if not specified)
+        refresh: Force refresh from Yahoo API, ignoring cache
+
+    Returns:
+        H2H matrix data with cache metadata
+    """
+    # Get scoreboard data (uses caching)
+    scoreboard_result = await get_league_scoreboard(
+        league_key=league_key,
+        week=week,
+        refresh=refresh,
+        yahoo_service=yahoo_service,
+        db=db,
+    )
+
+    # Parse H2H matrix from scoreboard data
+    parsed_scoreboard = scoreboard_result.get("data", {})
+    h2h_data = parse_head_to_head_matrix(parsed_scoreboard)
+
+    return {
+        "data": h2h_data,
+        "cache": scoreboard_result.get("cache", {}),
     }
 
 
