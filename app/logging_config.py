@@ -23,6 +23,19 @@ LOG_FILE = LOGS_DIR / "app.log"
 LOG_FORMAT = "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
 DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
+# Third-party loggers to silence (set to WARNING to reduce noise)
+NOISY_LOGGERS = [
+    "sqlalchemy",
+    "sqlalchemy.engine",
+    "sqlalchemy.pool",
+    "httpx",
+    "httpcore",
+    "urllib3",
+    "asyncio",
+    "watchfiles",
+    "multipart",
+]
+
 
 class ArchivingRotatingFileHandler(TimedRotatingFileHandler):
     """
@@ -119,6 +132,10 @@ def setup_logging(
         console_handler.setLevel(level)
         console_handler.setFormatter(formatter)
         logger.addHandler(console_handler)
+
+    # Silence noisy third-party loggers
+    for noisy_logger in NOISY_LOGGERS:
+        logging.getLogger(noisy_logger).setLevel(logging.WARNING)
 
     return logger
 
