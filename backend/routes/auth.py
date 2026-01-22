@@ -15,8 +15,11 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database.connection import get_db
-from app.database.models import User, OAuthToken, AuthCode
+from app.database.models import User, AuthCode
+from app.logging_config import get_logger
 from app.services.yahoo_api import YahooAPIService
+
+logger = get_logger(__name__)
 
 router = APIRouter()
 
@@ -81,17 +84,17 @@ def consume_auth_code(db: Session, code: str) -> Optional[int]:
     if expires.tzinfo is None:
         expires = expires.replace(tzinfo=timezone.utc)
 
-    if expires < datetime.now(timezone.utc):
+    if expires < datetime.now(timezone.utc): # type: ignore[return-value]
         # Expired - mark as used and return None
-        auth_code.used = True
+        setattr(auth_code, "used", True)
         db.commit()
         return None
 
     # Mark as used (single-use)
-    auth_code.used = True
+    setattr(auth_code, "used", True)
     db.commit()
 
-    return auth_code.user_id
+    return getattr(auth_code, "user_id", None)
 
 
 def create_access_token(user_id: int) -> str:
@@ -169,6 +172,7 @@ async def login(request: Request) -> RedirectResponse:
     # Generate authorization URL
     auth_url = YahooAPIService.get_authorization_url(state=state)
 
+    logger.info("Initiating OAuth login flow")
     return RedirectResponse(url=auth_url)
 
 
@@ -189,6 +193,7 @@ async def callback(
     """
     # Handle OAuth errors
     if error:
+        logger.warning(f"OAuth error received: {error} - {error_description}")
         raise HTTPException(
             status_code=400,
             detail=f"OAuth error: {error} - {error_description}",
@@ -209,7 +214,9 @@ async def callback(
     yahoo_service = YahooAPIService(db=db)
     try:
         token_data = await yahoo_service.exchange_code_for_token(code)
+        logger.debug("Successfully exchanged authorization code for tokens")
     except Exception as e:
+        logger.error(f"Failed to exchange code for token: {e}")
         raise HTTPException(
             status_code=400,
             detail=f"Failed to exchange code for token: {str(e)}",
@@ -259,6 +266,7 @@ async def callback(
         db.add(user)
         db.commit()
         db.refresh(user)
+        logger.info(f"New user created: {yahoo_guid[:8]}...")
 
     # Save/update OAuth token
     yahoo_service.user = user
@@ -268,10 +276,11 @@ async def callback(
     request.session["user_id"] = user.id
 
     # Generate short-lived auth code for Streamlit (more secure than JWT in URL)
-    auth_code = create_auth_code(db, user.id)
+    auth_code = create_auth_code(db, getattr(user, "id"))
 
     # Redirect to frontend with auth code in URL
     redirect_url = f"{settings.FRONTEND_URL}?{urlencode({'code': auth_code})}"
+    logger.info(f"User {yahoo_guid[:8]}... authenticated successfully")
     return RedirectResponse(url=redirect_url)
 
 
@@ -282,6 +291,7 @@ async def logout(request: Request) -> dict:
 
     Clears the session but keeps tokens in database for potential reuse.
     """
+    logger.info("User logged out")
     request.session.clear()
     return {"status": "ok", "message": "Logged out successfully"}
 
@@ -326,16 +336,13 @@ async def exchange_code_for_token(
 
 @router.get("/me")
 async def get_current_user_info(
-    request: Request,
-    db: Session = Depends(get_db),
+    user: Optional[User] = Depends(get_current_user),
 ) -> dict:
     """
     Get current user information.
 
     Returns user info if logged in, error if not.
     """
-    user = get_current_user(request, db)
-
     if not user:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
@@ -350,16 +357,13 @@ async def get_current_user_info(
 
 @router.get("/status")
 async def auth_status(
-    request: Request,
-    db: Session = Depends(get_db),
+    user: Optional[User] = Depends(get_current_user),
 ) -> dict:
     """
     Check authentication status.
 
     Returns whether user is logged in without requiring authentication.
     """
-    user = get_current_user(request, db)
-
     if not user:
         return {"authenticated": False}
 

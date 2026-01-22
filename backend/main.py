@@ -12,17 +12,23 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.config import settings
 from app.database.connection import engine
 from app.database.models import Base
+from app.logging_config import get_logger
 from backend.routes import auth, api
 from backend.routes.auth import callback as oauth_callback
+
+logger = get_logger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan handler - runs on startup and shutdown."""
     # Startup: Create database tables
+    logger.info("Starting Yahoo Fantasy Dashboard API")
     Base.metadata.create_all(bind=engine)
+    logger.info("Database tables initialized")
     yield
     # Shutdown: cleanup if needed
+    logger.info("Shutting down Yahoo Fantasy Dashboard API")
 
 
 app = FastAPI(

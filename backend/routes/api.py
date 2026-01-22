@@ -4,13 +4,16 @@ Data API routes for Yahoo Fantasy data.
 
 from typing import Optional, List
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database.connection import get_db
 from app.database.models import User, UserLeague
+from app.logging_config import get_logger
 from app.services.yahoo_api import YahooAPIService
 from backend.routes.auth import get_current_user
+
+logger = get_logger(__name__)
 
 router = APIRouter()
 
@@ -51,7 +54,6 @@ async def get_yahoo_service(
 
 @router.get("/user/leagues")
 async def get_user_leagues(
-    request: Request,
     sync: bool = False,
     yahoo_service: YahooAPIService = Depends(get_yahoo_service),
     db: Session = Depends(get_db),
@@ -68,9 +70,12 @@ async def get_user_leagues(
     """
     if sync:
         # Fetch from Yahoo API
+        logger.info(f"Syncing leagues for user {user.id}")
         try:
             leagues_data = await yahoo_service.get_user_leagues(sport="nba")
+            logger.debug(f"Fetched {len(leagues_data)} leagues from Yahoo")
         except Exception as e:
+            logger.error(f"Failed to fetch leagues from Yahoo: {e}")
             raise HTTPException(
                 status_code=502,
                 detail=f"Failed to fetch leagues from Yahoo: {str(e)}",
@@ -83,7 +88,7 @@ async def get_user_leagues(
                 continue
 
             # Find or create UserLeague
-            user_league = (
+            existing_league = (
                 db.query(UserLeague)
                 .filter(
                     UserLeague.user_id == user.id,
@@ -92,8 +97,9 @@ async def get_user_leagues(
                 .first()
             )
 
-            if not user_league:
-                user_league = UserLeague(
+            if existing_league is None:
+                # Create new
+                new_league = UserLeague(
                     user_id=user.id,
                     league_key=league_key,
                     league_id=league_info.get("league_id", ""),
@@ -101,12 +107,12 @@ async def get_user_leagues(
                     season=league_info.get("season"),
                     num_teams=league_info.get("num_teams"),
                 )
-                db.add(user_league)
+                db.add(new_league)
             else:
                 # Update existing
-                user_league.league_name = league_info.get("name")
-                user_league.season = league_info.get("season")
-                user_league.num_teams = league_info.get("num_teams")
+                existing_league.league_name = league_info.get("name", "")
+                existing_league.season = league_info.get("season", "")
+                existing_league.num_teams = league_info.get("num_teams", "")
 
         db.commit()
 
@@ -138,8 +144,10 @@ async def get_league_info(
 ) -> dict:
     """Get league metadata."""
     try:
+        logger.debug(f"Fetching info for league {league_key}")
         return await yahoo_service.get_league_info(league_key)
     except Exception as e:
+        logger.error(f"Failed to fetch league info for {league_key}: {e}")
         raise HTTPException(
             status_code=502,
             detail=f"Failed to fetch league info: {str(e)}",
@@ -168,8 +176,10 @@ async def get_league_standings(
 ) -> dict:
     """Get league standings."""
     try:
+        logger.debug(f"Fetching standings for league {league_key}")
         return await yahoo_service.get_league_standings(league_key)
     except Exception as e:
+        logger.error(f"Failed to fetch standings for {league_key}: {e}")
         raise HTTPException(
             status_code=502,
             detail=f"Failed to fetch standings: {str(e)}",
