@@ -28,12 +28,18 @@ NOISY_LOGGERS = [
     "sqlalchemy",
     "sqlalchemy.engine",
     "sqlalchemy.pool",
+    "sqlalchemy.orm",
     "httpx",
     "httpcore",
     "urllib3",
     "asyncio",
     "watchfiles",
     "multipart",
+    "uvicorn",
+    "uvicorn.access",
+    "uvicorn.error",
+    "fastapi",
+    "starlette",
 ]
 
 
@@ -134,10 +140,22 @@ def setup_logging(
         logger.addHandler(console_handler)
 
     # Silence noisy third-party loggers
-    for noisy_logger in NOISY_LOGGERS:
-        logging.getLogger(noisy_logger).setLevel(logging.WARNING)
+    silence_noisy_loggers()
 
     return logger
+
+
+def silence_noisy_loggers() -> None:
+    """
+    Set third-party loggers to WARNING level to reduce noise.
+
+    Call this after uvicorn/FastAPI startup to ensure their loggers are silenced.
+    """
+    for noisy_logger_name in NOISY_LOGGERS:
+        noisy_logger = logging.getLogger(noisy_logger_name)
+        noisy_logger.setLevel(logging.WARNING)
+        # Prevent propagation to root logger
+        noisy_logger.propagate = False
 
 
 def get_logger(name: str) -> logging.Logger:
