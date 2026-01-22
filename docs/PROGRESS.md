@@ -266,12 +266,94 @@ venv\Scripts\streamlit.exe run dashboard/main.py --server.port 8501
 ### Blockers
 None
 
-### Next Session
-- Sync leagues from Yahoo (click 🔄 button)
-- Display league standings with proper formatting
-- Add scoreboard visualization
-- Add matchup display
-- **NEW**: Implement logging utilities (console+file in dev, file-only in prod, daily rotation with archive)
+---
+
+## Session 4 - 2026-01-22
+
+### Completed
+
+**Logging Utilities:**
+- Created `app/logging_config.py` with centralized logging setup
+- Dual output: console + file in development, file-only in production
+- Daily log rotation with `ArchivingRotatingFileHandler`
+- Previous day's logs archived to `logs/archive/`
+- Integrated logging into FastAPI backend and Streamlit dashboard
+- Silenced noisy third-party loggers (sqlalchemy, httpx, uvicorn, etc.)
+
+**Testing Infrastructure:**
+- Added pytest to dev dependencies
+- Created `tests/` directory with 22 logging tests
+- All tests passing
+
+**Bug Fixes:**
+- Renamed `dashboard/app.py` to `dashboard/main.py` to fix naming conflict with `app` package
+
+**Documentation:**
+- Added package management guidelines to CLAUDE.md
+- Added testing requirements to CLAUDE.md
+- Updated all docs to reference `dashboard/main.py`
+
+### Files Created/Modified
+```
+app/
+└── logging_config.py          # NEW - Centralized logging
+
+tests/
+├── __init__.py                # NEW
+└── test_logging_config.py     # NEW - 22 tests
+
+logs/
+├── .gitkeep                   # NEW
+├── app.log                    # NEW (gitignored)
+└── archive/
+    └── .gitkeep               # NEW
+
+backend/
+└── main.py                    # MODIFIED - Added logging
+
+backend/routes/
+├── auth.py                    # MODIFIED - Added logging
+└── api.py                     # MODIFIED - Added logging
+
+dashboard/
+└── main.py                    # RENAMED from app.py, added logging
+
+pyproject.toml                 # MODIFIED - Added pytest
+requirements.txt               # MODIFIED - Added pytest
+.gitignore                     # MODIFIED - Added logs
+CLAUDE.md                      # MODIFIED - Added guidelines
+```
+
+### Current State
+- **Phase 1: COMPLETE**
+- **Phase 2: COMPLETE**
+- **Phase 3: IN PROGRESS**
+  - OAuth flow working ✓
+  - League selector ✓
+  - Basic standings display ✓
+  - Logging utilities ✓
+  - Remaining: proper standings parsing, weekly visualizations, data caching
+
+### Blockers
+None
+
+### Next Session (Session 5)
+Focus: Standings, Weekly Visualizations, and Data Caching
+
+1. **Parse and display standings properly**
+   - Adapt parsing from CLI repo for standings data
+   - Display formatted standings table in Streamlit
+
+2. **Create weekly visualizations page**
+   - Create `dashboard/pages/weekly.py`
+   - Display scoreboard/matchups for selected week
+   - Add basic visualizations (tables, charts)
+
+3. **Implement data caching with freshness indicator**
+   - Use `CachedData` model to store API responses
+   - Add "Last updated: X ago" indicator in UI
+   - Add manual refresh button to fetch fresh data
+   - Serve from cache when data is fresh
 
 ---
 

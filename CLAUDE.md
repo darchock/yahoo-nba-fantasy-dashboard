@@ -26,7 +26,10 @@ The original CLI tool is at: `C:\Users\darch\Projects\Yahoo_NBA_Fantasy_Hub`
 8. Pick-a-Winner Game (post-launch enhancement)
 
 ## Current Task
-Ready to start Phase 3: Streamlit Dashboard (login, league selector, data display)
+**Session 5 Focus:** Standings, Weekly Visualizations, and Data Caching
+1. Parse and display standings properly (adapt from CLI repo)
+2. Create `dashboard/pages/weekly.py` with scoreboard/matchups
+3. Implement `CachedData` storage with "Last updated" indicator and refresh button
 
 ## Quick Links
 - [Work Plan](./work_plan.md) - High-level roadmap and architecture

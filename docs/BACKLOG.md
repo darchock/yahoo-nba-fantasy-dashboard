@@ -70,6 +70,24 @@ Legend: `[ ]` pending | `[x]` done | `[~]` in progress | `[-]` skipped
 - [x] Integrate logging into FastAPI backend and Streamlit dashboard
 - [x] Create tests for logging utilities (22 tests passing)
 
+### Standings Display (Session 5)
+- [ ] Adapt standings parsing from CLI repo
+- [ ] Display formatted standings table with proper columns
+- [ ] Add team names, records, points, ranks
+
+### Weekly Visualizations (Session 5)
+- [ ] Create dashboard/pages/weekly.py
+- [ ] Display scoreboard for selected week
+- [ ] Show matchup results and scores
+- [ ] Add basic visualizations (tables/charts)
+
+### Data Caching (Session 5)
+- [ ] Implement caching service using CachedData model
+- [ ] Cache standings, scoreboard, and other API responses
+- [ ] Add "Last updated: X ago" indicator in sidebar/header
+- [ ] Add manual refresh button to fetch fresh data on demand
+- [ ] Serve from cache when data is recent (configurable staleness threshold)
+
 ---
 
 ## Phase 4: Refactor Visualizations
