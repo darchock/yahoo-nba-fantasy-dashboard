@@ -11,10 +11,13 @@ import httpx
 from typing import Optional
 from dotenv import load_dotenv
 
+from app.logging_config import get_logger
 from dashboard.pages.home import render_league_overview
 
 # Load environment variables
 load_dotenv()
+
+logger = get_logger(__name__)
 
 # Configuration from environment
 API_BASE_URL = os.getenv("API_BASE_URL", "https://localhost:8080")
@@ -55,6 +58,7 @@ def handle_oauth_callback() -> None:
         st.query_params.clear()
 
         # Exchange the code for a JWT token
+        logger.debug("Exchanging auth code for JWT token")
         try:
             with httpx.Client(base_url=API_BASE_URL, verify=VERIFY_SSL, timeout=30.0) as client:
                 response = client.post(
@@ -65,11 +69,14 @@ def handle_oauth_callback() -> None:
                 if response.status_code == 200:
                     token_data = response.json()
                     st.session_state.auth_token = token_data["access_token"]
+                    logger.info("User authenticated successfully via OAuth")
                     st.rerun()
                 else:
                     error_detail = response.json().get("detail", "Unknown error")
+                    logger.warning(f"Authentication failed: {error_detail}")
                     st.error(f"Authentication failed: {error_detail}")
         except Exception as e:
+            logger.error(f"Failed to complete authentication: {e}")
             st.error(f"Failed to complete authentication: {e}")
 
     # Check for error
@@ -111,16 +118,21 @@ def check_auth_status() -> Optional[dict]:
 def fetch_leagues(sync: bool = False) -> list:
     """Fetch user's leagues from API."""
     try:
+        logger.debug(f"Fetching leagues (sync={sync})")
         with get_api_client() as client:
             response = client.get("/api/user/leagues", params={"sync": sync})
             if response.status_code == 200:
-                return response.json()
+                leagues = response.json()
+                logger.debug(f"Fetched {len(leagues)} leagues")
+                return leagues
             elif response.status_code == 401:
                 # Token expired or invalid
+                logger.warning("Token expired or invalid, clearing session")
                 st.session_state.auth_token = None
                 st.session_state.user_id = None
                 st.rerun()
     except Exception as e:
+        logger.error(f"Failed to fetch leagues: {e}")
         st.error(f"Failed to fetch leagues: {e}")
 
     return []
@@ -225,6 +237,7 @@ def render_sidebar() -> None:
         # Logout
         if st.button("Logout", use_container_width=True):
             # Clear session state
+            logger.info("User logging out from dashboard")
             st.session_state.auth_token = None
             st.session_state.user_id = None
             st.session_state.leagues = []
@@ -267,6 +280,7 @@ def render_dashboard() -> None:
 
 def main() -> None:
     """Main application entry point."""
+    logger.debug("Dashboard page render started")
     init_session_state()
     handle_oauth_callback()
 
