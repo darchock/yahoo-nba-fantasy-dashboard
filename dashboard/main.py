@@ -1,7 +1,7 @@
 """
 Main Streamlit dashboard application.
 
-Run with: streamlit run dashboard/app.py
+Run with: streamlit run dashboard/main.py
 """
 
 import os

@@ -43,7 +43,7 @@ Legend: `[ ]` pending | `[x]` done | `[~]` in progress | `[-]` skipped
 ## Phase 3: Streamlit Dashboard
 
 ### Core Dashboard
-- [x] Create dashboard/app.py (main entry)
+- [x] Create dashboard/main.py (main entry)
 - [x] Implement Yahoo OAuth login button
 - [x] Create league selector dropdown
 - [x] Create week picker

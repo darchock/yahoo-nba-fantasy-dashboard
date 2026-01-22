@@ -91,7 +91,7 @@ GET  /api/league/{id}/visualizations/{week}/{type}
 
 ### Phase 3: Streamlit Dashboard
 **Files to create:**
-- `dashboard/app.py` - Main Streamlit app
+- `dashboard/main.py` - Main Streamlit app
 - `dashboard/pages/home.py` - League overview
 - `dashboard/pages/weekly.py` - Weekly visualizations
 - `dashboard/pages/trends.py` - Multi-week bump chart, trends
@@ -198,7 +198,7 @@ GET  /api/league/{id}/prediction-standings    → Game leaderboard
 | `backend/routes/auth.py` | OAuth flow endpoints |
 | `backend/routes/api.py` | Data API endpoints |
 | `backend/routes/predictions.py` | Pick-a-Winner game endpoints |
-| `dashboard/app.py` | Streamlit dashboard |
+| `dashboard/main.py` | Streamlit dashboard |
 | `dashboard/pages/pick_winner.py` | Prediction submission UI |
 | `dashboard/pages/prediction_standings.py` | Game leaderboard |
 | `app/services/scheduler.py` | APScheduler job definitions |

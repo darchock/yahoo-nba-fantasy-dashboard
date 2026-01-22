@@ -112,7 +112,7 @@ INFO:     Started reloader process
 ```bash
 cd C:\Users\darch\Projects\yahoo-nba-fantasy-dashboard
 venv\Scripts\activate
-streamlit run dashboard/app.py --server.port 8501
+streamlit run dashboard/main.py --server.port 8501
 ```
 
 **Expected output:**

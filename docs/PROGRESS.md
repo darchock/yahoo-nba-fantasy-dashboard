@@ -177,7 +177,7 @@ None
 
 ### Next Session
 - Begin Phase 3: Streamlit Dashboard
-  - Create `dashboard/app.py` (main Streamlit entry)
+  - Create `dashboard/main.py` (main Streamlit entry)
   - Implement Yahoo OAuth login button
   - Create league selector dropdown
   - Create week picker
@@ -192,7 +192,7 @@ None
 **Phase 3: Streamlit Dashboard - STARTED**
 
 **Streamlit Dashboard Core:**
-- Created `dashboard/app.py` (main Streamlit entry point)
+- Created `dashboard/main.py` (main Streamlit entry point)
 - Implemented login page with Yahoo OAuth button
 - Created sidebar with league selector dropdown and week picker
 - Created `dashboard/pages/home.py` with league overview (standings display)
@@ -260,7 +260,7 @@ venv\Scripts\python.exe -m uvicorn backend.main:app --host localhost --port 8080
 
 # Terminal 2 - Streamlit Dashboard
 cd C:\Users\darch\Projects\yahoo-nba-fantasy-dashboard
-venv\Scripts\streamlit.exe run dashboard/app.py --server.port 8501
+venv\Scripts\streamlit.exe run dashboard/main.py --server.port 8501
 ```
 
 ### Blockers

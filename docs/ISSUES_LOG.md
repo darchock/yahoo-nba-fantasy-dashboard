@@ -364,7 +364,7 @@ ModuleNotFoundError: No module named 'dashboard'
 ```
 
 **Cause:**
-When running `streamlit run dashboard/app.py`, Python doesn't know about the project's package structure. The `dashboard`, `app`, and `backend` folders aren't recognized as importable packages.
+When running `streamlit run dashboard/main.py`, Python doesn't know about the project's package structure. The `dashboard`, `app`, and `backend` folders aren't recognized as importable packages.
 
 **Solution:**
 Create `pyproject.toml` and install package in development mode:
