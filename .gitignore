@@ -214,3 +214,6 @@ __marimo__/
 # SSL certificates (development)
 *.pem
 
+# Application logs (keep .gitkeep files)
+logs/*.log
+logs/archive/*.log
