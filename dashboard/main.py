@@ -12,8 +12,8 @@ from typing import Optional
 from dotenv import load_dotenv
 
 from app.logging_config import get_logger
-from dashboard.pages.home import render_league_overview
-from dashboard.pages.weekly import render_weekly_scoreboard
+from dashboard.views.home import render_league_overview
+from dashboard.views.weekly import render_weekly_page
 
 # Load environment variables
 load_dotenv()
@@ -42,8 +42,8 @@ def init_session_state() -> None:
         st.session_state.auth_token = None
     if "selected_league" not in st.session_state:
         st.session_state.selected_league = None
-    if "selected_week" not in st.session_state:
-        st.session_state.selected_week = None
+    if "current_page" not in st.session_state:
+        st.session_state.current_page = "Home"
     if "leagues" not in st.session_state:
         st.session_state.leagues = []
 
@@ -141,7 +141,7 @@ def fetch_leagues(sync: bool = False) -> list:
 
 def render_login_page() -> None:
     """Render the login page for unauthenticated users."""
-    st.title("🏀 Yahoo Fantasy Basketball Dashboard")
+    st.title("Yahoo Fantasy Basketball Dashboard")
 
     st.markdown("""
     Welcome to the Yahoo Fantasy Basketball Dashboard!
@@ -164,7 +164,7 @@ def render_login_page() -> None:
 
         # Login button - redirects to FastAPI OAuth endpoint (same tab)
         login_url = f"{API_BASE_URL}/auth/yahoo/login"
-        if st.button("🔐 Login with Yahoo", use_container_width=True, type="primary"):
+        if st.button("Login with Yahoo", use_container_width=True, type="primary"):
             # Use JavaScript to redirect in the same tab
             st.markdown(
                 f'<meta http-equiv="refresh" content="0;url={login_url}">',
@@ -175,27 +175,14 @@ def render_login_page() -> None:
 
 
 def render_sidebar() -> None:
-    """Render the sidebar with league selector and options."""
+    """Render the sidebar with league selector and navigation."""
     with st.sidebar:
-        st.title("🏀 Fantasy Dashboard")
-
-        # User info
-        user = check_auth_status()
-        if user:
-            st.success(f"Logged in as: {user.get('display_name') or user.get('yahoo_guid', 'User')[:8]}")
+        st.title("Fantasy Dashboard")
 
         st.divider()
 
         # League selector
         st.subheader("Select League")
-
-        # Sync button
-        col1, col2 = st.columns([3, 1])
-        with col2:
-            if st.button("🔄", help="Sync leagues from Yahoo"):
-                with st.spinner("Syncing..."):
-                    st.session_state.leagues = fetch_leagues(sync=True)
-                    st.rerun()
 
         # Load leagues if not cached
         if not st.session_state.leagues:
@@ -222,16 +209,15 @@ def render_sidebar() -> None:
 
         st.divider()
 
-        # Week selector
-        st.subheader("Select Week")
-        week = st.number_input(
-            "Week",
-            min_value=1,
-            max_value=26,  # NBA fantasy typically has ~23-26 weeks
-            value=st.session_state.selected_week or 1,
+        # Page navigation
+        st.subheader("Navigation")
+        page = st.radio(
+            "Page",
+            options=["Home", "Weekly"],
+            index=0 if st.session_state.current_page == "Home" else 1,
             label_visibility="collapsed",
         )
-        st.session_state.selected_week = week
+        st.session_state.current_page = page
 
         st.divider()
 
@@ -259,35 +245,29 @@ def render_dashboard() -> None:
         ### Welcome!
 
         Select a league from the sidebar to see:
-        - **Standings** - Current league rankings
-        - **Scoreboard** - Weekly matchup scores
-        - **Matchups** - Head-to-head comparisons
+        - **Home** - League standings and season stats
+        - **Weekly** - Scoreboard and matchup analysis
 
-        If you don't see any leagues, click the sync button to fetch them from Yahoo.
+        If you don't see any leagues, click the Sync button to fetch them from Yahoo.
         """)
         return
 
     # Get current league info
     league_key = st.session_state.selected_league
-    week = st.session_state.selected_week or 1
 
-    # Navigation tabs
-    tab1, tab2 = st.tabs(["Standings", "Weekly Scoreboard"])
-
-    with tab1:
+    # Render the selected page
+    if st.session_state.current_page == "Home":
         render_league_overview(
             api_base_url=API_BASE_URL,
             auth_token=st.session_state.auth_token,
             league_key=league_key,
             verify_ssl=VERIFY_SSL,
         )
-
-    with tab2:
-        render_weekly_scoreboard(
+    elif st.session_state.current_page == "Weekly":
+        render_weekly_page(
             api_base_url=API_BASE_URL,
             auth_token=st.session_state.auth_token,
             league_key=league_key,
-            week=week,
             verify_ssl=VERIFY_SSL,
         )
 

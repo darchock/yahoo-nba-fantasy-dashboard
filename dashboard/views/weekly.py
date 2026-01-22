@@ -49,27 +49,18 @@ def format_time_ago(iso_timestamp: str) -> str:
         return "Unknown"
 
 
-def render_cache_indicator(cache_info: dict, refresh_key: str, on_refresh: callable) -> None:
+def render_cache_indicator(cache_info: dict) -> None:
     """
-    Render the cache freshness indicator with refresh button.
+    Render the cache freshness indicator.
 
     Args:
         cache_info: Cache metadata from API response
-        refresh_key: Unique key for the refresh button
-        on_refresh: Callback function when refresh is clicked
     """
-    col1, col2 = st.columns([4, 1])
-
-    with col1:
-        if cache_info.get("cached"):
-            time_ago = format_time_ago(cache_info.get("fetched_at"))
-            st.caption(f"Last updated: {time_ago}")
-        else:
-            st.caption("Freshly fetched")
-
-    with col2:
-        if st.button("Refresh", key=refresh_key, help="Fetch fresh data from Yahoo"):
-            on_refresh()
+    if cache_info.get("cached"):
+        time_ago = format_time_ago(cache_info.get("fetched_at", ""))
+        st.caption(f"Last updated: {time_ago}")
+    else:
+        st.caption("Freshly fetched")
 
 
 def render_matchup_card(matchup: dict) -> None:
@@ -170,7 +161,7 @@ def render_matchup_card(matchup: dict) -> None:
     st.dataframe(styled_df, use_container_width=True, hide_index=True)
 
 
-def render_weekly_scoreboard(
+def render_scoreboard_tab(
     api_base_url: str,
     auth_token: str,
     league_key: str,
@@ -178,7 +169,7 @@ def render_weekly_scoreboard(
     verify_ssl: bool = False,
 ) -> None:
     """
-    Render the weekly scoreboard page.
+    Render the scoreboard content.
 
     Args:
         api_base_url: Base URL for the API
@@ -187,18 +178,11 @@ def render_weekly_scoreboard(
         week: Week number to display
         verify_ssl: Whether to verify SSL certificates
     """
-    # Check for refresh request
-    refresh = st.session_state.get("force_refresh_scoreboard", False)
-    if refresh:
-        st.session_state.force_refresh_scoreboard = False
-
     # Fetch scoreboard data from API
     response_data = None
     try:
         headers = {"Authorization": f"Bearer {auth_token}"}
         params = {"week": week}
-        if refresh:
-            params["refresh"] = "true"
 
         with httpx.Client(base_url=api_base_url, headers=headers, verify=verify_ssl, timeout=30.0) as client:
             response = client.get(f"/api/league/{league_key}/scoreboard", params=params)
@@ -217,19 +201,10 @@ def render_weekly_scoreboard(
     # Extract data and cache info
     data = response_data.get("data", {})
     cache_info = response_data.get("cache", {})
-    league_info = data.get("league", {})
     matchups = data.get("matchups", [])
 
-    # Header
-    st.title(f"Week {week} Scoreboard")
-    st.caption(f"{league_info.get('name', 'League')} - Current Week: {league_info.get('current_week', 'N/A')}")
-
-    # Cache indicator with refresh
-    def trigger_refresh():
-        st.session_state.force_refresh_scoreboard = True
-        st.rerun()
-
-    render_cache_indicator(cache_info, "refresh_scoreboard", trigger_refresh)
+    # Cache indicator
+    render_cache_indicator(cache_info)
 
     if not matchups:
         st.info("No matchups found for this week.")
@@ -276,3 +251,63 @@ def render_weekly_scoreboard(
     if summary_rows:
         summary_df = pd.DataFrame(summary_rows)
         st.dataframe(summary_df, use_container_width=True, hide_index=True)
+
+
+def render_weekly_page(
+    api_base_url: str,
+    auth_token: str,
+    league_key: str,
+    verify_ssl: bool = False,
+) -> None:
+    """
+    Render the weekly page with week picker and content tabs.
+
+    Args:
+        api_base_url: Base URL for the API
+        auth_token: JWT authentication token
+        league_key: Yahoo league key
+        verify_ssl: Whether to verify SSL certificates
+    """
+    st.title("Weekly Analysis")
+
+    # Week picker
+    col1, col2, col3 = st.columns([1, 2, 2])
+    with col1:
+        week_options = list(range(1, 20))  # Weeks 1-19 (regular season)
+        week = st.selectbox(
+            "Select Week",
+            options=week_options,
+            index=None,
+            placeholder="Choose a week...",
+            key="week_picker",
+        )
+    with col2:
+        if week == 19:
+            st.caption("End of Regular Season")
+
+    if week is None:
+        st.info("Select a week above to view the scoreboard.")
+        return
+
+    st.divider()
+
+    # Content tabs
+    tab1, tab2 = st.tabs(["Scoreboard", "Visualizations"])
+
+    with tab1:
+        render_scoreboard_tab(
+            api_base_url=api_base_url,
+            auth_token=auth_token,
+            league_key=league_key,
+            week=week,
+            verify_ssl=verify_ssl,
+        )
+
+    with tab2:
+        st.info("Weekly visualizations coming soon...")
+        st.markdown("""
+        **Planned features:**
+        - Category performance charts
+        - Week-over-week trends
+        - Team comparison radar charts
+        """)

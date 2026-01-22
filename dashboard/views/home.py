@@ -223,15 +223,3 @@ def render_league_overview(
 
     else:
         st.info("No standings data available.")
-
-    # Quick links to other sections
-    st.divider()
-    st.subheader("Quick Navigation")
-
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.info("**Scoreboard**\nView weekly matchup scores")
-    with col2:
-        st.info("**Matchups**\nSee head-to-head matchups")
-    with col3:
-        st.info("**Transactions**\nRecent adds, drops, trades")
