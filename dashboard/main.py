@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 
 from app.logging_config import get_logger
 from dashboard.pages.home import render_league_overview
+from dashboard.pages.weekly import render_weekly_scoreboard
 
 # Load environment variables
 load_dotenv()
@@ -250,7 +251,7 @@ def render_dashboard() -> None:
     render_sidebar()
 
     if not st.session_state.selected_league:
-        st.title("🏀 Yahoo Fantasy Basketball Dashboard")
+        st.title("Yahoo Fantasy Basketball Dashboard")
         st.info("Please select a league from the sidebar to view data.")
 
         # Show welcome message
@@ -262,20 +263,33 @@ def render_dashboard() -> None:
         - **Scoreboard** - Weekly matchup scores
         - **Matchups** - Head-to-head comparisons
 
-        If you don't see any leagues, click the 🔄 sync button to fetch them from Yahoo.
+        If you don't see any leagues, click the sync button to fetch them from Yahoo.
         """)
         return
 
     # Get current league info
     league_key = st.session_state.selected_league
+    week = st.session_state.selected_week or 1
 
-    # Render the league overview (home page)
-    render_league_overview(
-        api_base_url=API_BASE_URL,
-        auth_token=st.session_state.auth_token,
-        league_key=league_key,
-        verify_ssl=VERIFY_SSL,
-    )
+    # Navigation tabs
+    tab1, tab2 = st.tabs(["Standings", "Weekly Scoreboard"])
+
+    with tab1:
+        render_league_overview(
+            api_base_url=API_BASE_URL,
+            auth_token=st.session_state.auth_token,
+            league_key=league_key,
+            verify_ssl=VERIFY_SSL,
+        )
+
+    with tab2:
+        render_weekly_scoreboard(
+            api_base_url=API_BASE_URL,
+            auth_token=st.session_state.auth_token,
+            league_key=league_key,
+            week=week,
+            verify_ssl=VERIFY_SSL,
+        )
 
 
 def main() -> None:
