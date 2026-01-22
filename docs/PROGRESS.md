@@ -271,6 +271,7 @@ None
 - Display league standings with proper formatting
 - Add scoreboard visualization
 - Add matchup display
+- **NEW**: Implement logging utilities (console+file in dev, file-only in prod, daily rotation with archive)
 
 ---
 

@@ -65,6 +65,20 @@ Common Pylance issues in this project:
 - `datetime.utcnow()` deprecated → use `datetime.now(timezone.utc)`
 - Import not resolved → VS Code needs correct Python interpreter selected
 
+## Adding New Packages
+When a new package is needed:
+1. **Add to both files** - Update `pyproject.toml` AND `requirements.txt`
+2. **pyproject.toml** - Add to `dependencies` (or `[project.optional-dependencies].dev` for dev-only packages like pytest)
+3. **requirements.txt** - Add with appropriate comment section
+4. **Never run pip install directly** - Always update config files first, then let user install
+
+## Testing Requirements
+**IMPORTANT**: Always write tests for new features before marking them complete:
+1. Create tests in `tests/` directory
+2. Run tests with: `pytest tests/ -v`
+3. All tests must pass before marking a task complete
+4. Use `pytest` for all testing (included in dev dependencies)
+
 ## Git Commit Rules
 When committing changes:
 1. **Logical separation** - Group related changes into separate commits

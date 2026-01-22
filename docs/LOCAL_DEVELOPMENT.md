@@ -162,8 +162,21 @@ FastAPI auto-generates API docs at:
 - ReDoc: https://localhost:8080/redoc
 
 ### Checking Logs
-- FastAPI logs appear in Terminal 1
-- Streamlit logs appear in Terminal 2
+In development mode, logs appear in **both** console and file:
+- **Console**: FastAPI logs in Terminal 1, Streamlit logs in Terminal 2
+- **File**: `logs/app.log` (current day's logs)
+- **Archive**: `logs/archive/` (previous days, auto-rotated daily)
+
+In production (deployment), logs are written to files only (no console output).
+
+To view recent log entries:
+```bash
+# Windows
+type logs\app.log
+
+# macOS/Linux
+tail -f logs/app.log
+```
 
 ### Database Inspection
 You can inspect the SQLite database with any SQLite browser, or via Python:

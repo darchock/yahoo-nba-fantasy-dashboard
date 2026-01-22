@@ -89,7 +89,37 @@ GET  /api/league/{id}/standings/{week}
 GET  /api/league/{id}/visualizations/{week}/{type}
 ```
 
-### Phase 3: Scheduled Data Refresh
+### Phase 3: Streamlit Dashboard
+**Files to create:**
+- `dashboard/app.py` - Main Streamlit app
+- `dashboard/pages/home.py` - League overview
+- `dashboard/pages/weekly.py` - Weekly visualizations
+- `dashboard/pages/trends.py` - Multi-week bump chart, trends
+- `dashboard/pages/transactions.py` - Transaction analysis
+- `dashboard/components/charts.py` - Plotly versions of visualizations
+
+**Features:**
+- Yahoo OAuth login button
+- League selector dropdown (user's leagues)
+- Week picker
+- Interactive Plotly charts (replace static PNGs)
+- Mobile-responsive layout
+- "Last updated" indicator with manual refresh button
+
+### Phase 4: Refactor Existing Visualizations
+**Files to modify:**
+- `visualization/totals_table.py` → Return Plotly figure or DataFrame
+- `visualization/ranking_table.py` → Return Plotly figure
+- `visualization/head_to_head.py` → Return Plotly heatmap
+- `visualization/standings_bump_chart.py` → Return Plotly line chart
+- `visualization/transactions.py` → Return Plotly bar charts
+
+**Changes:**
+- Add optional `return_figure=True` parameter to each function
+- Keep backward compatibility for CLI usage
+- Replace matplotlib with Plotly for interactivity
+
+### Phase 5: Scheduled Data Refresh
 **Purpose:** Keep dashboard data fresh - this is CORE functionality, not optional
 
 **Files to create:**
@@ -108,36 +138,6 @@ on_demand:        Manual refresh trigger from dashboard
 - Run jobs during off-peak hours (e.g., 4 AM)
 - Store job status/logs in database
 - Dashboard shows "Last updated: X hours ago"
-
-### Phase 4: Streamlit Dashboard
-**Files to create:**
-- `dashboard/app.py` - Main Streamlit app
-- `dashboard/pages/home.py` - League overview
-- `dashboard/pages/weekly.py` - Weekly visualizations
-- `dashboard/pages/trends.py` - Multi-week bump chart, trends
-- `dashboard/pages/transactions.py` - Transaction analysis
-- `dashboard/components/charts.py` - Plotly versions of visualizations
-
-**Features:**
-- Yahoo OAuth login button
-- League selector dropdown (user's leagues)
-- Week picker
-- Interactive Plotly charts (replace static PNGs)
-- Mobile-responsive layout
-- "Last updated" indicator with manual refresh button
-
-### Phase 5: Refactor Existing Visualizations
-**Files to modify:**
-- `visualization/totals_table.py` → Return Plotly figure or DataFrame
-- `visualization/ranking_table.py` → Return Plotly figure
-- `visualization/head_to_head.py` → Return Plotly heatmap
-- `visualization/standings_bump_chart.py` → Return Plotly line chart
-- `visualization/transactions.py` → Return Plotly bar charts
-
-**Changes:**
-- Add optional `return_figure=True` parameter to each function
-- Keep backward compatibility for CLI usage
-- Replace matplotlib with Plotly for interactivity
 
 ### Phase 6: Remove Hardcoded League Data
 **Files to modify:**

@@ -61,6 +61,15 @@ Legend: `[ ]` pending | `[x]` done | `[~]` in progress | `[-]` skipped
 - [x] Add AuthCode database model
 - [x] Add /auth/yahoo/exchange endpoint
 
+### Logging Utilities
+- [x] Create app/logging_config.py (centralized logging setup)
+- [x] Configure dual output: console + file in development
+- [x] Configure file-only output in production (deployment)
+- [x] Implement daily log rotation with TimedRotatingFileHandler
+- [x] Archive previous day's logs to logs/archive/ folder
+- [x] Integrate logging into FastAPI backend and Streamlit dashboard
+- [x] Create tests for logging utilities (22 tests passing)
+
 ---
 
 ## Phase 4: Refactor Visualizations
