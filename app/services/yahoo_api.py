@@ -286,9 +286,21 @@ class YahooAPIService:
         """Get all teams in a league."""
         return await self.make_request(f"/league/{league_key}/teams")
 
-    async def get_league_standings(self, league_key: str) -> Dict[str, Any]:
-        """Get league standings."""
-        return await self.make_request(f"/league/{league_key}/standings")
+    async def get_league_standings(
+        self, league_key: str, week: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """
+        Get league standings with team stats.
+
+        Args:
+            league_key: The league key
+            week: Week number (None for season totals)
+        """
+        # Include teams/stats subresource to get individual stat categories
+        endpoint = f"/league/{league_key}/standings"
+        if week is not None:
+            endpoint += f";week={week}"
+        return await self.make_request(endpoint)
 
     async def get_league_scoreboard(
         self, league_key: str, week: Optional[int] = None
