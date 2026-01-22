@@ -357,6 +357,106 @@ Focus: Standings, Weekly Visualizations, and Data Caching
 
 ---
 
+## Session 5 - 2026-01-22
+
+### Completed
+
+**Architecture Refactoring:**
+- Moved all parsing logic from Streamlit (client) to FastAPI (backend)
+- Created `app/parsing/standings.py` for standings data parsing
+- Created `app/parsing/scoreboard.py` for scoreboard/matchup data parsing
+- Streamlit now only consumes clean, pre-parsed data from the API
+
+**Data Caching:**
+- Implemented caching using existing `CachedData` model
+- Cache duration: 15 minutes (configurable via `CACHE_DURATION_MINUTES`)
+- Added `refresh` parameter to API endpoints to force cache bypass
+- API responses now include cache metadata (`fetched_at`, `expires_at`)
+
+**Weekly Scoreboard Page:**
+- Created `dashboard/pages/weekly.py` for weekly matchup display
+- Shows all matchups for selected week with stat comparisons
+- Highlights category winners in comparison table
+- Displays matchup scores (category wins/losses/ties)
+- Added tab navigation between Standings and Weekly Scoreboard
+
+**UI Enhancements:**
+- Added "Last updated: X ago" freshness indicator to all pages
+- Added "Refresh" button to manually fetch fresh data from Yahoo
+- Removed emojis from UI for cleaner professional look
+
+**Testing:**
+- Added 24 new tests for parsing modules (`tests/test_parsing.py`)
+- Tests cover helpers, standings parsing, scoreboard parsing, and caching
+- All 46 tests passing
+
+### Files Created/Modified
+```
+app/parsing/
+├── standings.py               # NEW - Standings parsing logic
+└── scoreboard.py              # NEW - Scoreboard/matchup parsing logic
+
+app/services/
+└── yahoo_api.py               # MODIFIED - Added week param to standings
+
+backend/routes/
+└── api.py                     # MODIFIED - Added caching, parsing, refresh param
+
+dashboard/
+├── main.py                    # MODIFIED - Added tab navigation, weekly page
+└── pages/
+    ├── home.py                # MODIFIED - Simplified to consume API data
+    └── weekly.py              # NEW - Weekly scoreboard page
+
+tests/
+└── test_parsing.py            # NEW - 24 parsing tests
+```
+
+### API Response Format
+API now returns structured responses with cache metadata:
+```json
+{
+  "data": { /* parsed data */ },
+  "cache": {
+    "cached": true,
+    "fetched_at": "2026-01-22T10:30:00+00:00",
+    "expires_at": "2026-01-22T10:45:00+00:00"
+  }
+}
+```
+
+### Current State
+- **Phase 1: COMPLETE**
+- **Phase 2: COMPLETE**
+- **Phase 3: IN PROGRESS**
+  - OAuth flow working ✓
+  - League selector ✓
+  - Standings with stats display ✓
+  - Weekly scoreboard page ✓
+  - Data caching with freshness indicator ✓
+  - Logging utilities ✓
+  - Remaining: transactions page, additional visualizations
+
+### Blockers
+None
+
+### Next Session (Session 6)
+Focus: Transactions Page and Polish
+
+1. **Create transactions page**
+   - Display recent adds, drops, trades
+   - Parse transaction data from Yahoo API
+
+2. **Add more visualizations**
+   - Charts for stat trends
+   - Team comparison charts
+
+3. **Polish and bug fixes**
+   - Test with real Yahoo data
+   - Handle edge cases (empty data, errors)
+
+---
+
 <!-- Template for new sessions:
 
 ## Session N - YYYY-MM-DD

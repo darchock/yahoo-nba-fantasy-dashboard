@@ -26,10 +26,10 @@ The original CLI tool is at: `C:\Users\darch\Projects\Yahoo_NBA_Fantasy_Hub`
 8. Pick-a-Winner Game (post-launch enhancement)
 
 ## Current Task
-**Session 5 Focus:** Standings, Weekly Visualizations, and Data Caching
-1. Parse and display standings properly (adapt from CLI repo)
-2. Create `dashboard/pages/weekly.py` with scoreboard/matchups
-3. Implement `CachedData` storage with "Last updated" indicator and refresh button
+**Session 6 Focus:** Transactions Page and Polish
+1. Create transactions page with recent adds, drops, trades
+2. Add more visualizations (charts for stat trends, team comparisons)
+3. Test with real Yahoo data and handle edge cases
 
 ## Quick Links
 - [Work Plan](./work_plan.md) - High-level roadmap and architecture
