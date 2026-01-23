@@ -316,3 +316,162 @@ class TestCacheMetadata:
         result = format_cache_metadata(None)
         assert result["cached"] is False
         assert result["fetched_at"] is None
+
+
+class TestSmartCaching:
+    """Tests for smart caching with week completion awareness."""
+
+    def test_is_week_complete_past_week(self):
+        """Test that past weeks are identified as complete."""
+        from backend.routes.api import is_week_complete
+
+        # Week 10 when current week is 15 -> complete
+        assert is_week_complete(week=10, current_week=15) is True
+        # Week 1 when current week is 5 -> complete
+        assert is_week_complete(week=1, current_week=5) is True
+
+    def test_is_week_complete_current_week(self):
+        """Test that current week is not complete."""
+        from backend.routes.api import is_week_complete
+
+        # Week 15 when current week is 15 -> not complete
+        assert is_week_complete(week=15, current_week=15) is False
+
+    def test_is_week_complete_future_week(self):
+        """Test that future weeks are not complete."""
+        from backend.routes.api import is_week_complete
+
+        # Week 16 when current week is 15 -> not complete
+        assert is_week_complete(week=16, current_week=15) is False
+
+    def test_calculate_cache_expiry_completed_week(self):
+        """Test that completed weeks get no expiry (None)."""
+        from backend.routes.api import calculate_cache_expiry
+
+        # Week 10 when current week is 15 -> None (never expires)
+        result = calculate_cache_expiry(week=10, current_week=15)
+        assert result is None
+
+    def test_calculate_cache_expiry_current_week(self):
+        """Test that current week gets standard TTL."""
+        from datetime import datetime, timezone
+        from backend.routes.api import calculate_cache_expiry, CACHE_DURATION_MINUTES
+
+        # Week 15 when current week is 15 -> datetime in future
+        result = calculate_cache_expiry(week=15, current_week=15)
+
+        assert result is not None
+        assert isinstance(result, datetime)
+        # Should expire within the next CACHE_DURATION_MINUTES + 1 minute (to account for test timing)
+        now = datetime.now(timezone.utc)
+        diff_minutes = (result - now).total_seconds() / 60
+        assert 0 < diff_minutes <= CACHE_DURATION_MINUTES + 1
+
+    def test_calculate_cache_expiry_future_week(self):
+        """Test that future weeks get standard TTL."""
+        from datetime import datetime, timezone
+        from backend.routes.api import calculate_cache_expiry, CACHE_DURATION_MINUTES
+
+        # Week 17 when current week is 15 -> datetime in future
+        result = calculate_cache_expiry(week=17, current_week=15)
+
+        assert result is not None
+        assert isinstance(result, datetime)
+        now = datetime.now(timezone.utc)
+        diff_minutes = (result - now).total_seconds() / 60
+        assert 0 < diff_minutes <= CACHE_DURATION_MINUTES + 1
+
+    def test_save_cached_data_with_default_expiry(self):
+        """Test save_cached_data uses default TTL when not specified."""
+        from datetime import datetime, timedelta, timezone
+        from backend.routes.api import (
+            save_cached_data,
+            CACHE_DURATION_MINUTES,
+            _USE_DEFAULT_TTL,
+        )
+        from app.database.connection import get_db
+        from app.database.models import CachedData
+
+        # Get a test database session
+        db = next(get_db())
+        try:
+            # Save data with default TTL
+            cache = save_cached_data(
+                db=db,
+                league_key="test_league_smart_cache_default",
+                data_type="test_data",
+                data={"test": "value"},
+                week=1,
+                expires_at=_USE_DEFAULT_TTL,
+            )
+
+            assert cache.expires_at is not None
+            now = datetime.now(timezone.utc)
+            # Should expire within CACHE_DURATION_MINUTES + 1 minute
+            diff_minutes = (cache.expires_at.replace(tzinfo=timezone.utc) - now).total_seconds() / 60
+            assert 0 < diff_minutes <= CACHE_DURATION_MINUTES + 1
+
+            # Cleanup
+            db.delete(cache)
+            db.commit()
+        finally:
+            db.close()
+
+    def test_save_cached_data_with_no_expiry(self):
+        """Test save_cached_data sets no expiry when explicitly None."""
+        from backend.routes.api import save_cached_data
+        from app.database.connection import get_db
+
+        # Get a test database session
+        db = next(get_db())
+        try:
+            # Save data with no expiry (completed week)
+            cache = save_cached_data(
+                db=db,
+                league_key="test_league_smart_cache_no_expiry",
+                data_type="test_data",
+                data={"test": "value"},
+                week=5,
+                expires_at=None,  # No expiry - completed week
+            )
+
+            assert cache.expires_at is None
+            assert cache.is_stale is False  # Never stale
+
+            # Cleanup
+            db.delete(cache)
+            db.commit()
+        finally:
+            db.close()
+
+    def test_save_cached_data_with_custom_expiry(self):
+        """Test save_cached_data accepts custom expiry datetime."""
+        from datetime import datetime, timedelta, timezone
+        from backend.routes.api import save_cached_data
+        from app.database.connection import get_db
+
+        # Get a test database session
+        db = next(get_db())
+        try:
+            custom_expiry = datetime.now(timezone.utc) + timedelta(hours=2)
+
+            # Save data with custom expiry
+            cache = save_cached_data(
+                db=db,
+                league_key="test_league_smart_cache_custom",
+                data_type="test_data",
+                data={"test": "value"},
+                week=10,
+                expires_at=custom_expiry,
+            )
+
+            assert cache.expires_at is not None
+            # Should be approximately 2 hours from now
+            diff_hours = (cache.expires_at.replace(tzinfo=timezone.utc) - datetime.now(timezone.utc)).total_seconds() / 3600
+            assert 1.9 < diff_hours < 2.1
+
+            # Cleanup
+            db.delete(cache)
+            db.commit()
+        finally:
+            db.close()

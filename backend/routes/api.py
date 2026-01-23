@@ -5,7 +5,10 @@ Returns clean, parsed data with caching support.
 """
 
 from datetime import datetime, timedelta, timezone
-from typing import Optional, List
+from typing import Optional, List, Union
+
+# Sentinel value to indicate "use default TTL"
+_USE_DEFAULT_TTL = object()
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -31,6 +34,46 @@ router = APIRouter()
 
 # Cache duration in minutes
 CACHE_DURATION_MINUTES = 15
+
+
+def is_week_complete(week: int, current_week: int) -> bool:
+    """
+    Determine if a week is complete based on the current week.
+
+    A week is considered complete if it's before the current week.
+    Completed weeks have final data that will never change.
+
+    Args:
+        week: The week to check
+        current_week: The current week from the league
+
+    Returns:
+        True if the week is complete, False otherwise
+    """
+    return week < current_week
+
+
+def calculate_cache_expiry(
+    week: int, current_week: int
+) -> Optional[datetime]:
+    """
+    Calculate the appropriate cache expiry based on week status.
+
+    - Completed weeks (week < current_week): Never expire (returns None)
+    - Current/future weeks: Standard TTL
+
+    Args:
+        week: The week being cached
+        current_week: The current week from the league
+
+    Returns:
+        Expiry datetime, or None for completed weeks
+    """
+    if is_week_complete(week, current_week):
+        logger.debug(f"Week {week} is complete (current={current_week}), caching indefinitely")
+        return None  # Never expires
+    else:
+        return datetime.now(timezone.utc) + timedelta(minutes=CACHE_DURATION_MINUTES)
 
 
 def require_auth(user: Optional[User] = Depends(get_current_user)) -> User:
@@ -104,9 +147,10 @@ def save_cached_data(
     data_type: str,
     data: dict,
     week: Optional[int] = None,
+    expires_at: Union[datetime, None, object] = _USE_DEFAULT_TTL,
 ) -> CachedData:
     """
-    Save or update cached data.
+    Save or update cached data with smart expiry.
 
     Args:
         db: Database session
@@ -114,12 +158,21 @@ def save_cached_data(
         data_type: Type of data
         data: Parsed data to cache
         week: Week number (None for season-level data)
+        expires_at: Cache expiry time. Three options:
+            - _USE_DEFAULT_TTL (default): Uses 15-minute TTL
+            - None: Cache never expires (for completed weeks)
+            - datetime: Specific expiry time
 
     Returns:
         The cached data record
     """
     now = datetime.now(timezone.utc)
-    expires_at = now + timedelta(minutes=CACHE_DURATION_MINUTES)
+
+    # Determine expiry based on parameter
+    if expires_at is _USE_DEFAULT_TTL:
+        calculated_expires_at: Optional[datetime] = now + timedelta(minutes=CACHE_DURATION_MINUTES)
+    else:
+        calculated_expires_at = expires_at  # type: ignore[assignment]
 
     # Find existing cache entry
     cache = (
@@ -135,7 +188,7 @@ def save_cached_data(
     if cache:
         cache.json_data = data
         cache.fetched_at = now
-        cache.expires_at = expires_at
+        cache.expires_at = calculated_expires_at
     else:
         cache = CachedData(
             league_key=league_key,
@@ -143,7 +196,7 @@ def save_cached_data(
             week=week,
             json_data=data,
             fetched_at=now,
-            expires_at=expires_at,
+            expires_at=calculated_expires_at,
         )
         db.add(cache)
 
@@ -351,8 +404,17 @@ async def get_league_standings(
     # Parse the response
     parsed_data = parse_standings(raw_data)
 
+    # Determine cache expiry based on week status
+    current_week = parsed_data.get("league", {}).get("current_week")
+    if week is not None and current_week is not None:
+        # Week-specific standings for a completed week can be cached indefinitely
+        expires_at = calculate_cache_expiry(week, current_week)
+    else:
+        # Season totals change constantly during the season
+        expires_at = _USE_DEFAULT_TTL  # type: ignore[assignment]
+
     # Cache the parsed data
-    cache = save_cached_data(db, league_key, data_type, parsed_data, week)
+    cache = save_cached_data(db, league_key, data_type, parsed_data, week, expires_at)
 
     return {
         "data": parsed_data,
@@ -410,8 +472,16 @@ async def get_league_scoreboard(
     # Use the week from parsed data if not specified
     actual_week = week if week is not None else parsed_data.get("week")
 
+    # Determine cache expiry based on week status
+    current_week = parsed_data.get("league", {}).get("current_week")
+    if actual_week is not None and current_week is not None:
+        expires_at = calculate_cache_expiry(actual_week, current_week)
+    else:
+        # Fallback to default TTL if we can't determine week status
+        expires_at = _USE_DEFAULT_TTL  # type: ignore[assignment]
+
     # Cache the parsed data
-    cache = save_cached_data(db, league_key, data_type, parsed_data, actual_week)
+    cache = save_cached_data(db, league_key, data_type, parsed_data, actual_week, expires_at)
 
     return {
         "data": parsed_data,

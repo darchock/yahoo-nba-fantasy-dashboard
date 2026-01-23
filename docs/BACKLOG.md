@@ -83,12 +83,13 @@ Legend: `[ ]` pending | `[x]` done | `[~]` in progress | `[-]` skipped
 - [x] Add Rankings tab (team ranks per category)
 - [x] Add Head-to-Head matrix tab (cross-league matchups)
 
-### Data Caching (Session 5)
+### Data Caching (Session 5-6)
 - [x] Implement caching service using CachedData model
 - [x] Cache standings, scoreboard, and other API responses
 - [x] Add "Last updated: X ago" indicator in sidebar/header
 - [x] Add manual refresh button to fetch fresh data on demand
 - [x] Serve from cache when data is recent (configurable staleness threshold)
+- [x] Smart caching: completed weeks never expire, current weeks use 15-min TTL
 
 ---
 
@@ -158,6 +159,26 @@ Legend: `[ ]` pending | `[x]` done | `[~]` in progress | `[-]` skipped
 ---
 
 ## Discovered During Development
-<!-- Add tasks discovered during implementation here -->
+
+### Smart Caching Edge Cases
+Current implementation uses week number comparison (`week < current_week`) to determine if a week is complete. This covers most cases but has edge cases:
+
+1. **Week transition timing** - `current_week` may increment before previous week's data is fully finalized
+2. **Matchup status lag** - Postponed games or API delays may leave matchups in non-final state
+3. **Stat corrections** - Yahoo occasionally corrects stats retroactively
+
+**Alternative approach (not implemented):** Check matchup status instead of week number:
+```python
+def is_week_finalized(parsed_scoreboard: dict) -> bool:
+    """Check if all matchups in the week are finalized."""
+    matchups = parsed_scoreboard.get("matchups", [])
+    if not matchups:
+        return False
+    return all(m.get("status") in ("postevent", "final") for m in matchups)
+```
+
+**Why deferred:** Week comparison covers 99% of cases. Users can use `refresh=true` to force fresh data when needed. Matchup-status check adds complexity and requires parsing scoreboard before deciding cache behavior.
+
+**Consider implementing if:** Users report stale data issues for recently-completed weeks.
 
 ---
