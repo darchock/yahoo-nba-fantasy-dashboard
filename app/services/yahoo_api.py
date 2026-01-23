@@ -4,6 +4,7 @@ Adapted from Yahoo_NBA_Fantasy_Hub/yahoo_api_handler.py
 """
 
 import base64
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any, List
 from urllib.parse import urlencode
@@ -13,6 +14,9 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database.models import User, OAuthToken
+from app.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class YahooAPIService:
@@ -104,7 +108,11 @@ class YahooAPIService:
             New token data, or None if refresh fails
         """
         if not self.user or not self.user.oauth_token:
+            logger.warning("Cannot refresh token: no user or token available")
             return None
+
+        user_id = self.user.id
+        logger.info(f"Refreshing access token for user={user_id}")
 
         auth_string = base64.b64encode(
             f"{settings.YAHOO_CLIENT_ID}:{settings.YAHOO_CLIENT_SECRET}".encode()
@@ -129,6 +137,7 @@ class YahooAPIService:
 
         # Update stored token
         self._save_token(token_data)
+        logger.info(f"Access token refreshed successfully for user={user_id}")
         return token_data
 
     def _save_token(self, token_data: Dict[str, Any]) -> None:
@@ -198,7 +207,8 @@ class YahooAPIService:
             if new_token:
                 return new_token["access_token"]
         except Exception as e:
-            print(f"Token refresh failed: {e}")
+            user_id = self.user.id if self.user else "unknown"
+            logger.error(f"Token refresh failed for user={user_id}: {e}")
 
         return None
 
@@ -224,6 +234,7 @@ class YahooAPIService:
         """
         access_token = await self.get_valid_access_token()
         if not access_token:
+            logger.error("Unable to obtain valid access token for Yahoo API request")
             raise Exception("Unable to obtain valid access token")
 
         headers = {"Authorization": f"Bearer {access_token}"}
@@ -235,12 +246,25 @@ class YahooAPIService:
 
         url = f"{self.FANTASY_API_BASE}{endpoint}"
 
-        async with httpx.AsyncClient() as client:
-            response = await client.request(
-                method, url, headers=headers, params=params
-            )
-            response.raise_for_status()
-            return response.json()
+        # Log request (exclude format param from log as it's always json)
+        log_params = {k: v for k, v in params.items() if k != "format"}
+        user_id = self.user.id if self.user else "unknown"
+        logger.info(f"Yahoo API request: {method} {endpoint} params={log_params or None} user={user_id}")
+
+        start_time = time.time()
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.request(
+                    method, url, headers=headers, params=params
+                )
+                response.raise_for_status()
+                elapsed_ms = (time.time() - start_time) * 1000
+                logger.info(f"Yahoo API response: {endpoint} status={response.status_code} time={elapsed_ms:.0f}ms")
+                return response.json()
+        except httpx.HTTPStatusError as e:
+            elapsed_ms = (time.time() - start_time) * 1000
+            logger.error(f"Yahoo API error: {endpoint} status={e.response.status_code} time={elapsed_ms:.0f}ms")
+            raise
 
     # Convenience methods for common API calls
 

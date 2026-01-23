@@ -19,8 +19,8 @@ LOGS_DIR = BASE_DIR / "logs"
 ARCHIVE_DIR = LOGS_DIR / "archive"
 LOG_FILE = LOGS_DIR / "app.log"
 
-# Log format
-LOG_FORMAT = "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
+# Log format - includes funcName for tracing origin
+LOG_FORMAT = "%(asctime)s | %(levelname)-8s | %(name)s:%(funcName)s | %(message)s"
 DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 # Third-party loggers to silence (set to WARNING to reduce noise)

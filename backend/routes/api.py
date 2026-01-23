@@ -258,12 +258,12 @@ async def get_user_leagues(
     """
     if sync:
         # Fetch from Yahoo API
-        logger.info(f"Syncing leagues for user {user.id}")
+        logger.info(f"Syncing leagues from Yahoo: user={user.id}")
         try:
             leagues_data = await yahoo_service.get_user_leagues(sport="nba")
-            logger.debug(f"Fetched {len(leagues_data)} leagues from Yahoo")
+            logger.info(f"Synced {len(leagues_data)} leagues from Yahoo: user={user.id}")
         except Exception as e:
-            logger.error(f"Failed to fetch leagues from Yahoo: {e}")
+            logger.error(f"Failed to sync leagues from Yahoo: user={user.id} error={e}")
             raise HTTPException(
                 status_code=502,
                 detail=f"Failed to fetch leagues from Yahoo: {str(e)}",
@@ -364,6 +364,7 @@ async def get_league_standings(
     refresh: bool = False,
     yahoo_service: YahooAPIService = Depends(get_yahoo_service),
     db: Session = Depends(get_db),
+    user: User = Depends(require_auth),
 ) -> dict:
     """
     Get league standings with team stats.
@@ -380,22 +381,27 @@ async def get_league_standings(
     """
     data_type = "standings"
 
+    user_id = user.id
+
     # Check cache first (unless refresh requested)
     if not refresh:
         cache = get_cached_data(db, league_key, data_type, week)
         if cache:
-            logger.debug(f"Returning cached standings for {league_key}")
+            logger.debug(f"Cache hit: standings league={league_key} week={week} user={user_id}")
             return {
                 "data": cache.json_data,
                 "cache": format_cache_metadata(cache),
             }
+        logger.debug(f"Cache miss: standings league={league_key} week={week} user={user_id}")
+    else:
+        logger.debug(f"Cache bypass (refresh=true): standings league={league_key} week={week} user={user_id}")
 
     # Fetch from Yahoo API
     try:
-        logger.info(f"Fetching standings from Yahoo for {league_key} (week={week})")
+        logger.info(f"Fetching standings from Yahoo: league={league_key} week={week} user={user_id}")
         raw_data = await yahoo_service.get_league_standings(league_key, week)
     except Exception as e:
-        logger.error(f"Failed to fetch standings for {league_key}: {e}")
+        logger.error(f"Failed to fetch standings: league={league_key} week={week} user={user_id} error={e}")
         raise HTTPException(
             status_code=502,
             detail=f"Failed to fetch standings: {str(e)}",
@@ -416,6 +422,10 @@ async def get_league_standings(
     # Cache the parsed data
     cache = save_cached_data(db, league_key, data_type, parsed_data, week, expires_at)
 
+    num_teams = len(parsed_data.get("teams", []))
+    cache_type = "indefinite" if expires_at is None else "timed"
+    logger.debug(f"Cached standings: league={league_key} week={week} teams={num_teams} cache={cache_type}")
+
     return {
         "data": parsed_data,
         "cache": format_cache_metadata(cache),
@@ -429,6 +439,7 @@ async def get_league_scoreboard(
     refresh: bool = False,
     yahoo_service: YahooAPIService = Depends(get_yahoo_service),
     db: Session = Depends(get_db),
+    user: User = Depends(require_auth),
 ) -> dict:
     """
     Get league scoreboard for a specific week.
@@ -444,23 +455,27 @@ async def get_league_scoreboard(
         Parsed scoreboard data with cache metadata
     """
     data_type = "scoreboard"
+    user_id = user.id
 
     # Check cache first (unless refresh requested)
     if not refresh:
         cache = get_cached_data(db, league_key, data_type, week)
         if cache:
-            logger.debug(f"Returning cached scoreboard for {league_key} week {week}")
+            logger.debug(f"Cache hit: scoreboard league={league_key} week={week} user={user_id}")
             return {
                 "data": cache.json_data,
                 "cache": format_cache_metadata(cache),
             }
+        logger.debug(f"Cache miss: scoreboard league={league_key} week={week} user={user_id}")
+    else:
+        logger.debug(f"Cache bypass (refresh=true): scoreboard league={league_key} week={week} user={user_id}")
 
     # Fetch from Yahoo API
     try:
-        logger.info(f"Fetching scoreboard from Yahoo for {league_key} (week={week})")
+        logger.info(f"Fetching scoreboard from Yahoo: league={league_key} week={week} user={user_id}")
         raw_data = await yahoo_service.get_league_scoreboard(league_key, week)
     except Exception as e:
-        logger.error(f"Failed to fetch scoreboard for {league_key}: {e}")
+        logger.error(f"Failed to fetch scoreboard: league={league_key} week={week} user={user_id} error={e}")
         raise HTTPException(
             status_code=502,
             detail=f"Failed to fetch scoreboard: {str(e)}",
@@ -483,6 +498,10 @@ async def get_league_scoreboard(
     # Cache the parsed data
     cache = save_cached_data(db, league_key, data_type, parsed_data, actual_week, expires_at)
 
+    num_matchups = len(parsed_data.get("matchups", []))
+    cache_type = "indefinite" if expires_at is None else "timed"
+    logger.debug(f"Cached scoreboard: league={league_key} week={actual_week} matchups={num_matchups} cache={cache_type}")
+
     return {
         "data": parsed_data,
         "cache": format_cache_metadata(cache),
@@ -496,6 +515,7 @@ async def get_league_weekly_totals(
     refresh: bool = False,
     yahoo_service: YahooAPIService = Depends(get_yahoo_service),
     db: Session = Depends(get_db),
+    user: User = Depends(require_auth),
 ) -> dict:
     """
     Get weekly totals for all teams in the league.
@@ -517,6 +537,7 @@ async def get_league_weekly_totals(
         refresh=refresh,
         yahoo_service=yahoo_service,
         db=db,
+        user=user,
     )
 
     # Parse totals from scoreboard data
@@ -536,6 +557,7 @@ async def get_league_weekly_rankings(
     refresh: bool = False,
     yahoo_service: YahooAPIService = Depends(get_yahoo_service),
     db: Session = Depends(get_db),
+    user: User = Depends(require_auth),
 ) -> dict:
     """
     Get weekly rankings for all teams in the league.
@@ -557,6 +579,7 @@ async def get_league_weekly_rankings(
         refresh=refresh,
         yahoo_service=yahoo_service,
         db=db,
+        user=user,
     )
 
     # Parse rankings from scoreboard data
@@ -576,6 +599,7 @@ async def get_league_weekly_h2h(
     refresh: bool = False,
     yahoo_service: YahooAPIService = Depends(get_yahoo_service),
     db: Session = Depends(get_db),
+    user: User = Depends(require_auth),
 ) -> dict:
     """
     Get head-to-head matrix for all teams in the league.
@@ -598,6 +622,7 @@ async def get_league_weekly_h2h(
         refresh=refresh,
         yahoo_service=yahoo_service,
         db=db,
+        user=user,
     )
 
     # Parse H2H matrix from scoreboard data
@@ -618,6 +643,7 @@ async def get_league_periodical_totals(
     refresh: bool = False,
     yahoo_service: YahooAPIService = Depends(get_yahoo_service),
     db: Session = Depends(get_db),
+    user: User = Depends(require_auth),
 ) -> dict:
     """
     Get aggregated totals for all teams across a week range.
@@ -654,6 +680,7 @@ async def get_league_periodical_totals(
             refresh=refresh,
             yahoo_service=yahoo_service,
             db=db,
+            user=user,
         )
         parsed_scoreboards.append(scoreboard_result.get("data", {}))
 
@@ -674,6 +701,7 @@ async def get_league_periodical_rankings(
     refresh: bool = False,
     yahoo_service: YahooAPIService = Depends(get_yahoo_service),
     db: Session = Depends(get_db),
+    user: User = Depends(require_auth),
 ) -> dict:
     """
     Get rankings for all teams based on aggregated stats across a week range.
@@ -708,6 +736,7 @@ async def get_league_periodical_rankings(
             refresh=refresh,
             yahoo_service=yahoo_service,
             db=db,
+            user=user,
         )
         parsed_scoreboards.append(scoreboard_result.get("data", {}))
 
@@ -749,6 +778,7 @@ async def get_league_matchups(
     refresh: bool = False,
     yahoo_service: YahooAPIService = Depends(get_yahoo_service),
     db: Session = Depends(get_db),
+    user: User = Depends(require_auth),
 ) -> dict:
     """
     Get matchups for a specific week (for Pick-a-Winner game).
@@ -770,4 +800,5 @@ async def get_league_matchups(
         refresh=refresh,
         yahoo_service=yahoo_service,
         db=db,
+        user=user,
     )
