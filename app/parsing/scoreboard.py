@@ -496,3 +496,231 @@ def parse_head_to_head_matrix(parsed_scoreboard: dict) -> dict[str, Any]:
         "matrix": sorted_matrix,
         "totals": sorted_totals,
     }
+
+
+# Stats that should be summed across weeks (counting stats)
+COUNTING_STATS = {"3PTM", "PTS", "REB", "AST", "STL", "BLK", "TO"}
+
+# Stats that should be averaged across weeks (percentage stats)
+PERCENTAGE_STATS = {"FG%", "FT%"}
+
+
+def aggregate_team_stats(weekly_stats_list: list[dict]) -> dict:
+    """
+    Aggregate team stats across multiple weeks.
+
+    Counting stats are summed, percentage stats are averaged.
+
+    Args:
+        weekly_stats_list: List of stats dictionaries, one per week
+
+    Returns:
+        Aggregated stats dictionary
+    """
+    if not weekly_stats_list:
+        return {}
+
+    aggregated = {}
+    num_weeks = len(weekly_stats_list)
+
+    for stat in STAT_CATEGORIES:
+        values = []
+        for week_stats in weekly_stats_list:
+            val = week_stats.get(stat, 0)
+            if isinstance(val, (int, float)):
+                values.append(val)
+
+        if not values:
+            aggregated[stat] = 0
+            continue
+
+        if stat in COUNTING_STATS:
+            # Sum counting stats
+            aggregated[stat] = sum(values)
+        elif stat in PERCENTAGE_STATS:
+            # Average percentage stats
+            aggregated[stat] = sum(values) / len(values)
+        else:
+            # Default: sum
+            aggregated[stat] = sum(values)
+
+    return aggregated
+
+
+def parse_periodical_totals(parsed_scoreboards: list[dict]) -> dict[str, Any]:
+    """
+    Parse periodical totals from multiple weeks of scoreboard data.
+
+    Aggregates stats across the specified week range.
+
+    Args:
+        parsed_scoreboards: List of parsed scoreboard data (one per week)
+
+    Returns:
+        Dictionary with period info and list of team totals
+    """
+    if not parsed_scoreboards:
+        return {
+            "start_week": 0,
+            "end_week": 0,
+            "teams": [],
+            "stat_categories": STAT_CATEGORIES,
+        }
+
+    # Get week range
+    weeks = [sb.get("week", 0) for sb in parsed_scoreboards]
+    start_week = min(weeks) if weeks else 0
+    end_week = max(weeks) if weeks else 0
+
+    # Collect stats per team across all weeks
+    team_weekly_stats: dict[str, list[dict]] = {}
+    team_keys: dict[str, str] = {}
+
+    for scoreboard in parsed_scoreboards:
+        matchups = scoreboard.get("matchups", [])
+        for matchup in matchups:
+            for team in matchup.get("teams", []):
+                team_name = team.get("team_name", "Unknown")
+                team_key = team.get("team_key", "")
+                stats = team.get("stats", {})
+
+                if team_name not in team_weekly_stats:
+                    team_weekly_stats[team_name] = []
+                    team_keys[team_name] = team_key
+
+                team_weekly_stats[team_name].append(stats)
+
+    # Aggregate and format
+    teams = []
+    for team_name, weekly_stats_list in team_weekly_stats.items():
+        aggregated = aggregate_team_stats(weekly_stats_list)
+
+        team_row = {
+            "team_name": team_name,
+            "team_key": team_keys.get(team_name, ""),
+        }
+        for stat in STAT_CATEGORIES:
+            value = aggregated.get(stat, 0)
+            team_row[stat] = format_stat_value(stat, value)
+        teams.append(team_row)
+
+    return {
+        "start_week": start_week,
+        "end_week": end_week,
+        "teams": teams,
+        "stat_categories": STAT_CATEGORIES,
+    }
+
+
+def parse_periodical_rankings(parsed_scoreboards: list[dict]) -> dict[str, Any]:
+    """
+    Parse periodical rankings from multiple weeks of scoreboard data.
+
+    Aggregates stats across weeks, then calculates rankings.
+
+    Args:
+        parsed_scoreboards: List of parsed scoreboard data (one per week)
+
+    Returns:
+        Dictionary with period info and list of team rankings
+    """
+    if not parsed_scoreboards:
+        return {
+            "start_week": 0,
+            "end_week": 0,
+            "teams": [],
+            "stat_categories": STAT_CATEGORIES,
+            "num_teams": 0,
+        }
+
+    # Get week range
+    weeks = [sb.get("week", 0) for sb in parsed_scoreboards]
+    start_week = min(weeks) if weeks else 0
+    end_week = max(weeks) if weeks else 0
+
+    # Collect stats per team across all weeks
+    team_weekly_stats: dict[str, list[dict]] = {}
+    team_keys: dict[str, str] = {}
+
+    for scoreboard in parsed_scoreboards:
+        matchups = scoreboard.get("matchups", [])
+        for matchup in matchups:
+            for team in matchup.get("teams", []):
+                team_name = team.get("team_name", "Unknown")
+                team_key = team.get("team_key", "")
+                stats = team.get("stats", {})
+
+                if team_name not in team_weekly_stats:
+                    team_weekly_stats[team_name] = []
+                    team_keys[team_name] = team_key
+
+                team_weekly_stats[team_name].append(stats)
+
+    # Aggregate stats for each team
+    teams_data = []
+    for team_name, weekly_stats_list in team_weekly_stats.items():
+        aggregated = aggregate_team_stats(weekly_stats_list)
+        teams_data.append({
+            "team_name": team_name,
+            "team_key": team_keys.get(team_name, ""),
+            "stats": aggregated,
+        })
+
+    if not teams_data:
+        return {
+            "start_week": start_week,
+            "end_week": end_week,
+            "teams": [],
+            "stat_categories": STAT_CATEGORIES,
+            "num_teams": 0,
+        }
+
+    # Calculate rankings for each stat
+    rankings = {team["team_name"]: {"team_key": team["team_key"]} for team in teams_data}
+
+    for stat in STAT_CATEGORIES:
+        team_values = []
+        for team in teams_data:
+            value = team["stats"].get(stat, 0)
+            if not isinstance(value, (int, float)):
+                value = 0
+            team_values.append((team["team_name"], value))
+
+        # Sort by value (ascending for TO, descending for others)
+        reverse = stat not in LOWER_IS_BETTER
+        sorted_teams = sorted(team_values, key=lambda x: x[1], reverse=reverse)
+
+        # Assign ranks (handle ties)
+        current_rank = 1
+        prev_value = None
+        for i, (team_name, value) in enumerate(sorted_teams):
+            if prev_value is not None and value != prev_value:
+                current_rank = i + 1
+            rankings[team_name][stat] = current_rank
+            prev_value = value
+
+    # Build result list sorted by average rank
+    teams_result = []
+    for team_name, stat_ranks in rankings.items():
+        rank_values = [stat_ranks.get(stat, 0) for stat in STAT_CATEGORIES]
+        avg_rank = sum(rank_values) / len(rank_values) if rank_values else 0
+
+        team_row = {
+            "team_name": team_name,
+            "team_key": stat_ranks.get("team_key", ""),
+        }
+        for stat in STAT_CATEGORIES:
+            team_row[stat] = stat_ranks.get(stat, "-")
+        team_row["avg_rank"] = round(avg_rank, 2)
+        teams_result.append(team_row)
+
+    # Sort by average rank
+    teams_result.sort(key=lambda x: x["avg_rank"])
+
+    return {
+        "start_week": start_week,
+        "end_week": end_week,
+        "teams": teams_result,
+        "stat_categories": STAT_CATEGORIES,
+        "num_teams": len(teams_data),
+    }

@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 from app.logging_config import get_logger
 from dashboard.views.home import render_league_overview
 from dashboard.views.weekly import render_weekly_page
+from dashboard.views.periodical import render_periodical_page
 
 # Load environment variables
 load_dotenv()
@@ -211,10 +212,12 @@ def render_sidebar() -> None:
 
         # Page navigation
         st.subheader("Navigation")
+        page_options = ["Home", "Weekly", "Periodical"]
+        current_index = page_options.index(st.session_state.current_page) if st.session_state.current_page in page_options else 0
         page = st.radio(
             "Page",
-            options=["Home", "Weekly"],
-            index=0 if st.session_state.current_page == "Home" else 1,
+            options=page_options,
+            index=current_index,
             label_visibility="collapsed",
         )
         st.session_state.current_page = page
@@ -247,6 +250,7 @@ def render_dashboard() -> None:
         Select a league from the sidebar to see:
         - **Home** - League standings and season stats
         - **Weekly** - Scoreboard and matchup analysis
+        - **Periodical** - Aggregated stats across multiple weeks
 
         If you don't see any leagues, click the Sync button to fetch them from Yahoo.
         """)
@@ -265,6 +269,13 @@ def render_dashboard() -> None:
         )
     elif st.session_state.current_page == "Weekly":
         render_weekly_page(
+            api_base_url=API_BASE_URL,
+            auth_token=st.session_state.auth_token,
+            league_key=league_key,
+            verify_ssl=VERIFY_SSL,
+        )
+    elif st.session_state.current_page == "Periodical":
+        render_periodical_page(
             api_base_url=API_BASE_URL,
             auth_token=st.session_state.auth_token,
             league_key=league_key,

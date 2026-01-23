@@ -19,6 +19,8 @@ from app.parsing.scoreboard import (
     parse_weekly_totals,
     parse_weekly_rankings,
     parse_head_to_head_matrix,
+    parse_periodical_totals,
+    parse_periodical_rankings,
 )
 from app.services.yahoo_api import YahooAPIService
 from backend.routes.auth import get_current_user
@@ -535,6 +537,116 @@ async def get_league_weekly_h2h(
     return {
         "data": h2h_data,
         "cache": scoreboard_result.get("cache", {}),
+    }
+
+
+@router.get("/league/{league_key}/periodical-totals")
+async def get_league_periodical_totals(
+    league_key: str,
+    start_week: int,
+    end_week: int,
+    refresh: bool = False,
+    yahoo_service: YahooAPIService = Depends(get_yahoo_service),
+    db: Session = Depends(get_db),
+) -> dict:
+    """
+    Get aggregated totals for all teams across a week range.
+
+    Counting stats are summed, percentage stats are averaged.
+
+    Args:
+        league_key: Yahoo league key
+        start_week: First week of the period (inclusive)
+        end_week: Last week of the period (inclusive)
+        refresh: Force refresh from Yahoo API, ignoring cache
+
+    Returns:
+        Aggregated totals data with cache metadata
+    """
+    if start_week > end_week:
+        raise HTTPException(
+            status_code=400,
+            detail="start_week must be less than or equal to end_week",
+        )
+
+    if start_week < 1 or end_week > 19:
+        raise HTTPException(
+            status_code=400,
+            detail="Weeks must be between 1 and 19",
+        )
+
+    # Fetch scoreboard data for each week in the range
+    parsed_scoreboards = []
+    for week in range(start_week, end_week + 1):
+        scoreboard_result = await get_league_scoreboard(
+            league_key=league_key,
+            week=week,
+            refresh=refresh,
+            yahoo_service=yahoo_service,
+            db=db,
+        )
+        parsed_scoreboards.append(scoreboard_result.get("data", {}))
+
+    # Parse aggregated totals
+    totals_data = parse_periodical_totals(parsed_scoreboards)
+
+    return {
+        "data": totals_data,
+        "cache": {"cached": not refresh, "note": f"Aggregated from weeks {start_week}-{end_week}"},
+    }
+
+
+@router.get("/league/{league_key}/periodical-rankings")
+async def get_league_periodical_rankings(
+    league_key: str,
+    start_week: int,
+    end_week: int,
+    refresh: bool = False,
+    yahoo_service: YahooAPIService = Depends(get_yahoo_service),
+    db: Session = Depends(get_db),
+) -> dict:
+    """
+    Get rankings for all teams based on aggregated stats across a week range.
+
+    Args:
+        league_key: Yahoo league key
+        start_week: First week of the period (inclusive)
+        end_week: Last week of the period (inclusive)
+        refresh: Force refresh from Yahoo API, ignoring cache
+
+    Returns:
+        Rankings data with cache metadata
+    """
+    if start_week > end_week:
+        raise HTTPException(
+            status_code=400,
+            detail="start_week must be less than or equal to end_week",
+        )
+
+    if start_week < 1 or end_week > 19:
+        raise HTTPException(
+            status_code=400,
+            detail="Weeks must be between 1 and 19",
+        )
+
+    # Fetch scoreboard data for each week in the range
+    parsed_scoreboards = []
+    for week in range(start_week, end_week + 1):
+        scoreboard_result = await get_league_scoreboard(
+            league_key=league_key,
+            week=week,
+            refresh=refresh,
+            yahoo_service=yahoo_service,
+            db=db,
+        )
+        parsed_scoreboards.append(scoreboard_result.get("data", {}))
+
+    # Parse aggregated rankings
+    rankings_data = parse_periodical_rankings(parsed_scoreboards)
+
+    return {
+        "data": rankings_data,
+        "cache": {"cached": not refresh, "note": f"Aggregated from weeks {start_week}-{end_week}"},
     }
 
 

@@ -185,7 +185,11 @@ class YahooAPIService:
         token = self.user.oauth_token
         if not token.is_expired:
             self._access_token = token.access_token
-            self._token_expires_at = token.expires_at
+            # Ensure expires_at is timezone-aware (SQLite stores naive datetimes)
+            expires_at = token.expires_at
+            if expires_at and expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+            self._token_expires_at = expires_at
             return self._access_token
 
         # Try to refresh
