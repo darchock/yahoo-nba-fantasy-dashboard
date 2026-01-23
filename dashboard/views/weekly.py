@@ -14,6 +14,10 @@ import pandas as pd
 # Stat categories in display order
 STAT_CATEGORIES = ["FG%", "FT%", "3PTM", "PTS", "REB", "AST", "STL", "BLK", "TO"]
 
+# Dark-mode friendly highlight colors (muted/pastel)
+COLOR_WIN = "#2d5a3d"  # Muted forest green
+COLOR_LOSE = "#5a2d2d"  # Muted burgundy
+
 
 def format_time_ago(iso_timestamp: str) -> str:
     """
@@ -84,26 +88,35 @@ def render_matchup_card(matchup: dict) -> None:
     team2_wins = score.get("team2_wins", 0)
     ties = score.get("ties", 0)
 
-    # Header with team names and score
-    col1, col2, col3 = st.columns([2, 1, 2])
+    # Header with team names and score in same row
+    team1_name = team1.get("team_name", "Team 1")
+    team2_name = team2.get("team_name", "Team 2")
 
-    with col1:
-        if team1_wins > team2_wins:
-            st.markdown(f"### :green[{team1.get('team_name', 'Team 1')}]")
-        else:
-            st.markdown(f"### {team1.get('team_name', 'Team 1')}")
+    # Build score display with ties if any
+    ties_text = f" <span style='font-size: 0.7em; font-weight: normal'>({ties} ties)</span>" if ties > 0 else ""
 
-    with col2:
-        score_display = f"**{team1_wins}** - **{team2_wins}**"
-        if ties > 0:
-            score_display += f" ({ties} ties)"
-        st.markdown(f"<div style='text-align: center'>{score_display}</div>", unsafe_allow_html=True)
+    # Highlight winning team name
+    if team1_wins > team2_wins:
+        team1_style = "color: #6ecf6e"  # Soft green for winner
+        team2_style = ""
+    elif team2_wins > team1_wins:
+        team1_style = ""
+        team2_style = "color: #6ecf6e"  # Soft green for winner
+    else:
+        team1_style = ""
+        team2_style = ""
 
-    with col3:
-        if team2_wins > team1_wins:
-            st.markdown(f"### :green[{team2.get('team_name', 'Team 2')}]")
-        else:
-            st.markdown(f"### {team2.get('team_name', 'Team 2')}")
+    # Single row with team names and prominent score
+    st.markdown(
+        f"""
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
+            <span style="font-size: 1.3em; font-weight: 500; {team1_style}">{team1_name}</span>
+            <span style="font-size: 1.8em; font-weight: bold; margin: 0 1rem;">{team1_wins} - {team2_wins}{ties_text}</span>
+            <span style="font-size: 1.3em; font-weight: 500; {team2_style}">{team2_name}</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     # Stats comparison table
     rows = []
@@ -146,15 +159,15 @@ def render_matchup_card(matchup: dict) -> None:
     team2_col = team2.get("team_name", "Team 2")
     display_columns = list(display_df.columns)
 
-    # Custom styling for winners
+    # Custom styling for winners (dark-mode friendly colors)
     def highlight_winners(row):
         winner = winner_map.get(row.name, "tie")
         styles = [""] * len(display_columns)
 
         if winner == "team1" and team1_col in display_columns:
-            styles[display_columns.index(team1_col)] = "background-color: #d4edda; font-weight: bold"
+            styles[display_columns.index(team1_col)] = f"background-color: {COLOR_WIN}; font-weight: bold"
         elif winner == "team2" and team2_col in display_columns:
-            styles[display_columns.index(team2_col)] = "background-color: #d4edda; font-weight: bold"
+            styles[display_columns.index(team2_col)] = f"background-color: {COLOR_WIN}; font-weight: bold"
         return styles
 
     styled_df = display_df.style.apply(highlight_winners, axis=1)
@@ -295,12 +308,12 @@ def render_rankings_tab(
 
     df = pd.DataFrame(rows)
 
-    # Style: highlight rank 1 in green, last rank in red
+    # Style: highlight rank 1 in green, last rank in red (dark-mode friendly)
     def highlight_ranks(val):
         if val == 1:
-            return "background-color: #d4edda; font-weight: bold"
+            return f"background-color: {COLOR_WIN}; font-weight: bold"
         elif val == num_teams:
-            return "background-color: #f8d7da"
+            return f"background-color: {COLOR_LOSE}"
         return ""
 
     styled_df = df.style.applymap(highlight_ranks, subset=stat_categories)
@@ -355,14 +368,19 @@ def render_h2h_tab(
 
     df = pd.DataFrame(rows, columns=["Team"] + columns)
 
-    # Style the Win% column based on value
+    # Find the highest and lowest win% values
+    win_pct_values = [t["win_pct"] for t in totals if isinstance(t.get("win_pct"), (int, float))]
+    max_win_pct = max(win_pct_values) if win_pct_values else None
+    min_win_pct = min(win_pct_values) if win_pct_values else None
+
+    # Style only the first (highest) and last (lowest) win% managers
     def style_win_pct(val):
         if not isinstance(val, (int, float)):
             return ""
-        if val >= 60:
-            return "background-color: #d4edda; font-weight: bold"  # Green
-        elif val < 45:
-            return "background-color: #f8d7da"  # Red
+        if max_win_pct is not None and val == max_win_pct:
+            return f"background-color: {COLOR_WIN}; font-weight: bold"
+        elif min_win_pct is not None and val == min_win_pct:
+            return f"background-color: {COLOR_LOSE}"
         return ""
 
     styled_df = df.style.applymap(style_win_pct, subset=["Win%"])
