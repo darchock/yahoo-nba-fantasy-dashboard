@@ -57,33 +57,20 @@ def fetch_api_data(
 
 
 def render_manager_activity_tab(
-    api_base_url: str,
-    auth_token: str,
-    league_key: str,
+    stats_data: dict | None,
     team_name_map: dict,
-    verify_ssl: bool = False,
 ) -> None:
     """
     Render the Manager Activity tab showing transaction counts per team.
 
     Args:
-        api_base_url: Base URL for the API
-        auth_token: JWT authentication token
-        league_key: Yahoo league key
+        stats_data: Pre-fetched transaction stats data (from /transactions/stats)
         team_name_map: Mapping of team_key to team_name
-        verify_ssl: Whether to verify SSL certificates
     """
-    result = fetch_api_data(
-        api_base_url=api_base_url,
-        auth_token=auth_token,
-        endpoint=f"/api/league/{league_key}/transactions/stats",
-        verify_ssl=verify_ssl,
-    )
-
-    if result is None:
+    if stats_data is None:
         return
 
-    manager_activity = result.get("manager_activity", [])
+    manager_activity = stats_data.get("manager_activity", [])
 
     if not manager_activity:
         st.info("No transaction activity found. Try syncing transactions first.")
@@ -123,31 +110,18 @@ def render_manager_activity_tab(
 
 
 def render_most_added_tab(
-    api_base_url: str,
-    auth_token: str,
-    league_key: str,
-    verify_ssl: bool = False,
+    stats_data: dict | None,
 ) -> None:
     """
     Render the Most Added Players tab.
 
     Args:
-        api_base_url: Base URL for the API
-        auth_token: JWT authentication token
-        league_key: Yahoo league key
-        verify_ssl: Whether to verify SSL certificates
+        stats_data: Pre-fetched transaction stats data (from /transactions/stats)
     """
-    result = fetch_api_data(
-        api_base_url=api_base_url,
-        auth_token=auth_token,
-        endpoint=f"/api/league/{league_key}/transactions/stats",
-        verify_ssl=verify_ssl,
-    )
-
-    if result is None:
+    if stats_data is None:
         return
 
-    most_added = result.get("most_added", [])
+    most_added = stats_data.get("most_added", [])
 
     if not most_added:
         st.info("No player add data found.")
@@ -167,31 +141,18 @@ def render_most_added_tab(
 
 
 def render_most_dropped_tab(
-    api_base_url: str,
-    auth_token: str,
-    league_key: str,
-    verify_ssl: bool = False,
+    stats_data: dict | None,
 ) -> None:
     """
     Render the Most Dropped Players tab.
 
     Args:
-        api_base_url: Base URL for the API
-        auth_token: JWT authentication token
-        league_key: Yahoo league key
-        verify_ssl: Whether to verify SSL certificates
+        stats_data: Pre-fetched transaction stats data (from /transactions/stats)
     """
-    result = fetch_api_data(
-        api_base_url=api_base_url,
-        auth_token=auth_token,
-        endpoint=f"/api/league/{league_key}/transactions/stats",
-        verify_ssl=verify_ssl,
-    )
-
-    if result is None:
+    if stats_data is None:
         return
 
-    most_dropped = result.get("most_dropped", [])
+    most_dropped = stats_data.get("most_dropped", [])
 
     if not most_dropped:
         st.info("No player drop data found.")
@@ -512,6 +473,15 @@ def render_transactions_page(
         verify_ssl=verify_ssl,
     )
 
+    # Fetch transaction stats once for all stats-related tabs
+    # This avoids 3 separate API calls for Manager Activity, Most Added, Most Dropped
+    stats_data = fetch_api_data(
+        api_base_url=api_base_url,
+        auth_token=auth_token,
+        endpoint=f"/api/league/{league_key}/transactions/stats",
+        verify_ssl=verify_ssl,
+    )
+
     st.divider()
 
     # Content tabs
@@ -532,25 +502,12 @@ def render_transactions_page(
 
     with tab2:
         render_manager_activity_tab(
-            api_base_url=api_base_url,
-            auth_token=auth_token,
-            league_key=league_key,
+            stats_data=stats_data,
             team_name_map=team_name_map,
-            verify_ssl=verify_ssl,
         )
 
     with tab3:
-        render_most_added_tab(
-            api_base_url=api_base_url,
-            auth_token=auth_token,
-            league_key=league_key,
-            verify_ssl=verify_ssl,
-        )
+        render_most_added_tab(stats_data=stats_data)
 
     with tab4:
-        render_most_dropped_tab(
-            api_base_url=api_base_url,
-            auth_token=auth_token,
-            league_key=league_key,
-            verify_ssl=verify_ssl,
-        )
+        render_most_dropped_tab(stats_data=stats_data)
