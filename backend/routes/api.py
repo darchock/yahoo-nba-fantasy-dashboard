@@ -330,33 +330,93 @@ async def get_user_leagues(
 @router.get("/league/{league_key}/info")
 async def get_league_info(
     league_key: str,
+    refresh: bool = False,
     yahoo_service: YahooAPIService = Depends(get_yahoo_service),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_auth),
 ) -> dict:
-    """Get league metadata."""
+    """Get league metadata with caching."""
+    data_type = "league_info"
+    user_id = user.id
+
+    # Check cache first (unless refresh requested)
+    if not refresh:
+        cache = get_cached_data(db, league_key, data_type, week=None)
+        if cache:
+            logger.debug(f"Cache hit: league_info league={league_key} user={user_id}")
+            return {
+                "data": cache.json_data,
+                "cache": format_cache_metadata(cache),
+            }
+        logger.debug(f"Cache miss: league_info league={league_key} user={user_id}")
+    else:
+        logger.debug(f"Cache bypass (refresh=true): league_info league={league_key} user={user_id}")
+
+    # Fetch from Yahoo API
     try:
-        logger.debug(f"Fetching info for league {league_key}")
-        return await yahoo_service.get_league_info(league_key)
+        logger.info(f"Fetching league info from Yahoo: league={league_key} user={user_id}")
+        raw_data = await yahoo_service.get_league_info(league_key)
     except Exception as e:
-        logger.error(f"Failed to fetch league info for {league_key}: {e}")
+        logger.error(f"Failed to fetch league info: league={league_key} user={user_id} error={e}")
         raise HTTPException(
             status_code=502,
             detail=f"Failed to fetch league info: {str(e)}",
         )
 
+    # League info rarely changes - cache indefinitely (expires_at=None)
+    cache = save_cached_data(db, league_key, data_type, raw_data, week=None, expires_at=None)
+    logger.info(f"Cached league_info: league={league_key} cache=indefinite")
+
+    return {
+        "data": raw_data,
+        "cache": format_cache_metadata(cache),
+    }
+
 
 @router.get("/league/{league_key}/teams")
 async def get_league_teams(
     league_key: str,
+    refresh: bool = False,
     yahoo_service: YahooAPIService = Depends(get_yahoo_service),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_auth),
 ) -> dict:
-    """Get all teams in a league."""
+    """Get all teams in a league with caching."""
+    data_type = "league_teams"
+    user_id = user.id
+
+    # Check cache first (unless refresh requested)
+    if not refresh:
+        cache = get_cached_data(db, league_key, data_type, week=None)
+        if cache:
+            logger.debug(f"Cache hit: league_teams league={league_key} user={user_id}")
+            return {
+                "data": cache.json_data,
+                "cache": format_cache_metadata(cache),
+            }
+        logger.debug(f"Cache miss: league_teams league={league_key} user={user_id}")
+    else:
+        logger.debug(f"Cache bypass (refresh=true): league_teams league={league_key} user={user_id}")
+
+    # Fetch from Yahoo API
     try:
-        return await yahoo_service.get_league_teams(league_key)
+        logger.info(f"Fetching league teams from Yahoo: league={league_key} user={user_id}")
+        raw_data = await yahoo_service.get_league_teams(league_key)
     except Exception as e:
+        logger.error(f"Failed to fetch teams: league={league_key} user={user_id} error={e}")
         raise HTTPException(
             status_code=502,
             detail=f"Failed to fetch teams: {str(e)}",
         )
+
+    # Teams don't change mid-season - cache indefinitely (expires_at=None)
+    cache = save_cached_data(db, league_key, data_type, raw_data, week=None, expires_at=None)
+    logger.info(f"Cached league_teams: league={league_key} cache=indefinite")
+
+    return {
+        "data": raw_data,
+        "cache": format_cache_metadata(cache),
+    }
 
 
 @router.get("/league/{league_key}/standings")
