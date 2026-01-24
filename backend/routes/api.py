@@ -27,8 +27,66 @@ from app.parsing.scoreboard import (
 )
 from app.parsing.transactions import parse_transactions
 from app.services.transactions import TransactionService
-from app.services.yahoo_api import YahooAPIService
+from app.services.yahoo_api import (
+    YahooAPIService,
+    YahooAPIError,
+    YahooRateLimitError,
+    YahooAuthError,
+    YahooConnectionError,
+    YahooTimeoutError,
+)
 from backend.routes.auth import get_current_user
+
+
+def handle_yahoo_api_error(e: Exception, context: str = "") -> HTTPException:
+    """
+    Convert Yahoo API exceptions to appropriate HTTPExceptions.
+
+    Args:
+        e: The exception to handle
+        context: Additional context for error message (e.g., "fetching standings")
+
+    Returns:
+        HTTPException with appropriate status code and message
+    """
+    context_msg = f" while {context}" if context else ""
+
+    if isinstance(e, YahooRateLimitError):
+        detail = f"Yahoo API rate limit exceeded{context_msg}. Please try again later."
+        if e.retry_after:
+            detail += f" (retry after {e.retry_after} seconds)"
+        return HTTPException(status_code=429, detail=detail)
+
+    if isinstance(e, YahooAuthError):
+        return HTTPException(
+            status_code=401,
+            detail=f"Yahoo authentication failed{context_msg}. Please log in again.",
+        )
+
+    if isinstance(e, YahooTimeoutError):
+        return HTTPException(
+            status_code=504,
+            detail=f"Yahoo API request timed out{context_msg}. Please try again.",
+        )
+
+    if isinstance(e, YahooConnectionError):
+        return HTTPException(
+            status_code=502,
+            detail=f"Unable to connect to Yahoo API{context_msg}. Please try again later.",
+        )
+
+    if isinstance(e, YahooAPIError):
+        status_code = e.status_code or 502
+        return HTTPException(
+            status_code=status_code,
+            detail=f"Yahoo API error{context_msg}: {e.message}",
+        )
+
+    # Generic fallback
+    return HTTPException(
+        status_code=502,
+        detail=f"Failed to communicate with Yahoo API{context_msg}: {str(e)}",
+    )
 
 logger = get_logger(__name__)
 
@@ -358,10 +416,7 @@ async def get_league_info(
         raw_data = await yahoo_service.get_league_info(league_key)
     except Exception as e:
         logger.error(f"Failed to fetch league info: league={league_key} user={user_id} error={e}")
-        raise HTTPException(
-            status_code=502,
-            detail=f"Failed to fetch league info: {str(e)}",
-        )
+        raise handle_yahoo_api_error(e, context="fetching league info")
 
     # League info rarely changes - cache indefinitely (expires_at=None)
     cache = save_cached_data(db, league_key, data_type, raw_data, week=None, expires_at=None)
@@ -404,10 +459,7 @@ async def get_league_teams(
         raw_data = await yahoo_service.get_league_teams(league_key)
     except Exception as e:
         logger.error(f"Failed to fetch teams: league={league_key} user={user_id} error={e}")
-        raise HTTPException(
-            status_code=502,
-            detail=f"Failed to fetch teams: {str(e)}",
-        )
+        raise handle_yahoo_api_error(e, context="fetching teams")
 
     # Teams don't change mid-season - cache indefinitely (expires_at=None)
     cache = save_cached_data(db, league_key, data_type, raw_data, week=None, expires_at=None)
@@ -464,10 +516,7 @@ async def get_league_standings(
         raw_data = await yahoo_service.get_league_standings(league_key, week)
     except Exception as e:
         logger.error(f"Failed to fetch standings: league={league_key} week={week} user={user_id} error={e}")
-        raise HTTPException(
-            status_code=502,
-            detail=f"Failed to fetch standings: {str(e)}",
-        )
+        raise handle_yahoo_api_error(e, context="fetching standings")
 
     # Parse the response
     parsed_data = parse_standings(raw_data)
@@ -538,10 +587,7 @@ async def get_league_scoreboard(
         raw_data = await yahoo_service.get_league_scoreboard(league_key, week)
     except Exception as e:
         logger.error(f"Failed to fetch scoreboard: league={league_key} week={week} user={user_id} error={e}")
-        raise HTTPException(
-            status_code=502,
-            detail=f"Failed to fetch scoreboard: {str(e)}",
-        )
+        raise handle_yahoo_api_error(e, context="fetching scoreboard")
 
     # Parse the response
     parsed_data = parse_scoreboard(raw_data)
@@ -856,10 +902,9 @@ async def get_league_transactions(
         except Exception as e:
             logger.error(f"Failed to sync transactions: league={league_key} error={e}")
             if total_count == 0:
-                raise HTTPException(
-                    status_code=502,
-                    detail=f"Failed to fetch transactions from Yahoo: {str(e)}",
-                )
+                # No cached data to fall back on - raise the error
+                raise handle_yahoo_api_error(e, context="syncing transactions")
+            # Otherwise, fall back to cached data (logged above)
 
     # Query from database
     transactions = txn_service.get_transactions(
@@ -988,10 +1033,7 @@ async def sync_transactions(
         }
     except Exception as e:
         logger.error(f"Failed to sync transactions: league={league_key} error={e}")
-        raise HTTPException(
-            status_code=502,
-            detail=f"Failed to sync transactions from Yahoo: {str(e)}",
-        )
+        raise handle_yahoo_api_error(e, context="syncing transactions")
 
 
 @router.get("/league/{league_key}/transactions/sync-status")
