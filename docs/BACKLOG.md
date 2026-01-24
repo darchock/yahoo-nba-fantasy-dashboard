@@ -53,7 +53,7 @@ Legend: `[ ]` pending | `[x]` done | `[~]` in progress | `[-]` skipped
 - [x] dashboard/views/home.py (league overview) - renamed from pages/
 - [x] dashboard/views/weekly.py (weekly visualizations) - renamed from pages/
 - [ ] dashboard/views/trends.py (bump chart, trends)
-- [ ] dashboard/views/transactions.py (transaction analysis)
+- [x] dashboard/views/transactions.py (transaction analysis) - Session 7
 
 ### Authentication (Added Session 3)
 - [x] Implement JWT token-based auth for Streamlit
@@ -155,6 +155,42 @@ Legend: `[ ]` pending | `[x]` done | `[~]` in progress | `[-]` skipped
 - [ ] Create dashboard/pages/prediction_standings.py (leaderboard)
 - [ ] Add results view (correct/incorrect indicators)
 - [ ] Track streaks and accuracy percentages
+
+---
+
+## Architecture & Quality Improvements
+
+### Completed (Session 8)
+- [x] Add caching to `/league/{key}/info` endpoint
+- [x] Add caching to `/league/{key}/teams` endpoint
+- [x] Fix silent `except Exception: pass` patterns (add logging)
+- [x] Add global exception handler to backend
+- [x] Add retry logic with tenacity for Yahoo API calls
+- [x] Create custom exception classes for Yahoo API errors
+- [x] Add consistent error handling across all endpoints
+- [x] Fix redundant API calls in Transactions page (3 calls → 1)
+- [x] Fix transaction cooldown scoping (per-user → per-league)
+
+### Remaining - High Priority
+- [ ] Add request correlation IDs for tracing requests through the system
+- [ ] Mask OAuth tokens in logs (currently full tokens could appear in error logs)
+- [ ] Add league access validation (verify user can access requested league_key)
+- [ ] Add per-user API rate limiting at endpoint level
+
+### Remaining - Medium Priority
+- [ ] Extract duplicated `format_time_ago()` to shared utility module
+- [ ] Change verbose INFO logs to DEBUG for routine operations
+- [ ] Add structured logging (JSON format) for easier parsing
+- [ ] Add database connection pool monitoring
+- [ ] Cache periodical aggregation results (currently re-parses cached scoreboards)
+
+### Remaining - Low Priority
+- [ ] Move hardcoded values to config (week range 1-19, 15-min cache TTL)
+- [ ] Add input validation for API parameters (week bounds, league_key format)
+- [ ] Add session lifecycle logging (creation, refresh, expiration)
+
+### Test Fixes
+- [ ] Investigate and fix `test_get_manager_activity` test failure
 
 ---
 

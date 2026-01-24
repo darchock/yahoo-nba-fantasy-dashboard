@@ -657,6 +657,122 @@ Focus: Additional Features and Polish
 
 ---
 
+## Session 8 - 2026-01-24
+
+### Completed
+
+**Code Quality Review & Improvements:**
+
+Conducted comprehensive code review across four areas: caching, error handling, logging, and architecture. Implemented critical fixes in two phases.
+
+**Phase 1: Critical Fixes**
+
+1. **Added Caching to Uncached Endpoints** (`backend/routes/api.py`)
+   - `GET /league/{key}/info` - Now cached indefinitely (league info rarely changes)
+   - `GET /league/{key}/teams` - Now cached indefinitely (teams don't change mid-season)
+   - Both endpoints previously made Yahoo API calls on every request
+
+2. **Fixed Silent Exception Blocks**
+   - `app/parsing/transactions.py:163` - Added warning log for parse failures
+   - `dashboard/main.py:118` - Added detailed logging for auth check failures
+   - Previously: `except Exception: pass` - invisible failures
+
+3. **Added Global Exception Handler** (`backend/main.py`)
+   - Catches unhandled exceptions
+   - Logs full stack trace for debugging
+   - Returns generic "Internal server error" to clients (no stack trace exposure)
+
+**Phase 2: Retry Logic & Error Handling**
+
+1. **Added Tenacity Retry Library** (`app/services/yahoo_api.py`)
+   - Automatic retry with exponential backoff (1s, 2s, 4s...)
+   - Up to 3 attempts for transient failures
+   - Retries on: `TimeoutException`, `ConnectError`
+   - Does NOT retry on: 429 (rate limit), 401 (auth), other HTTP errors
+
+2. **Custom Exception Classes** (`app/services/yahoo_api.py`)
+   - `YahooAPIError` - Base exception
+   - `YahooRateLimitError` - HTTP 429 with retry-after support
+   - `YahooAuthError` - HTTP 401 authentication failures
+   - `YahooConnectionError` - Connection failures
+   - `YahooTimeoutError` - Request timeouts
+
+3. **Consistent Error Handler** (`backend/routes/api.py`)
+   - Added `handle_yahoo_api_error()` helper function
+   - Maps exceptions to appropriate HTTP status codes:
+     - 429 → "Yahoo API rate limit exceeded, try again later"
+     - 401 → "Yahoo authentication failed, please log in again"
+     - 504 → "Yahoo API request timed out"
+     - 502 → "Unable to connect to Yahoo API"
+   - Updated all Yahoo API endpoints to use consistent error handling
+
+4. **Fixed Redundant API Calls** (`dashboard/views/transactions.py`)
+   - Previously: 3 separate calls to `/transactions/stats` (one per tab)
+   - Now: 1 call, shared data passed to all tabs
+   - Reduces API calls by 66% on Transactions page
+
+**Phase 3: Transaction Cooldown Scoping**
+
+1. **Fixed Cooldown to be Per-League** (`app/services/transactions.py`)
+   - Problem: Cooldown was per-user-per-league, but transaction data is shared
+   - User A syncs → User B (same league) could sync again 5 minutes later
+   - Solution: Added `get_league_last_sync_time()` to check across ALL users
+   - Now: If anyone synced recently, cooldown applies to everyone in that league
+
+### Files Created/Modified
+```
+app/services/
+├── yahoo_api.py           # MODIFIED - Retry logic, custom exceptions (+159 lines)
+└── transactions.py        # MODIFIED - League-level cooldown (+62 lines)
+
+app/parsing/
+└── transactions.py        # MODIFIED - Added exception logging
+
+backend/
+├── main.py                # MODIFIED - Global exception handler
+└── routes/api.py          # MODIFIED - Caching, error handler helper
+
+dashboard/
+├── main.py                # MODIFIED - Better auth check logging
+└── views/transactions.py  # MODIFIED - Fixed redundant API calls
+
+pyproject.toml             # MODIFIED - Added tenacity dependency
+requirements.txt           # MODIFIED - Added tenacity dependency
+```
+
+### Test Results
+- 77/78 tests passing (98.7%)
+- 1 pre-existing failure in `test_get_manager_activity` (unrelated to changes)
+
+### Current State
+- **Phase 1: COMPLETE**
+- **Phase 2: COMPLETE**
+- **Phase 3: IN PROGRESS**
+  - OAuth flow working ✓
+  - League selector ✓
+  - Standings with stats display ✓
+  - Weekly scoreboard page ✓
+  - Weekly totals/rankings/H2H tabs ✓
+  - Data caching with freshness indicator ✓
+  - Transactions page ✓
+  - Logging utilities ✓
+  - **Error handling improvements ✓** (NEW)
+  - **Retry logic with tenacity ✓** (NEW)
+  - **League-level transaction cooldown ✓** (NEW)
+  - Remaining: See backlog for future improvements
+
+### Blockers
+None
+
+### Next Session
+See BACKLOG.md "Architecture & Quality Improvements" section for remaining items:
+- Extract duplicated `format_time_ago()` to shared module
+- Add request correlation IDs
+- Input validation improvements
+- Move hardcoded values to config
+
+---
+
 <!-- Template for new sessions:
 
 ## Session N - YYYY-MM-DD
