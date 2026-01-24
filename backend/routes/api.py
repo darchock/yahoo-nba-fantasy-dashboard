@@ -25,6 +25,8 @@ from app.parsing.scoreboard import (
     parse_periodical_totals,
     parse_periodical_rankings,
 )
+from app.parsing.transactions import parse_transactions
+from app.services.transactions import TransactionService
 from app.services.yahoo_api import YahooAPIService
 from backend.routes.auth import get_current_user
 
@@ -752,23 +754,168 @@ async def get_league_periodical_rankings(
 @router.get("/league/{league_key}/transactions")
 async def get_league_transactions(
     league_key: str,
+    team_key: Optional[str] = None,
     transaction_type: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+    sync: bool = False,
+    db: Session = Depends(get_db),
     yahoo_service: YahooAPIService = Depends(get_yahoo_service),
+    user: User = Depends(require_auth),
 ) -> dict:
     """
-    Get league transactions.
+    Get league transactions from database.
+
+    If sync=True or no transactions exist, fetch from Yahoo API first.
 
     Args:
         league_key: Yahoo league key
-        transaction_type: Filter by type (add, drop, trade)
+        team_key: Optional team key to filter by
+        transaction_type: Filter by type (add, drop, trade, add/drop)
+        limit: Maximum number of results (default 50)
+        offset: Number of results to skip
+        sync: If true, fetch new transactions from Yahoo first
     """
+    user_id = user.id
+    txn_service = TransactionService(db)
+
+    # Check if we need to sync
+    total_count = txn_service.get_transaction_count(league_key)
+    should_sync = sync or total_count == 0
+
+    new_count = 0
+    if should_sync:
+        try:
+            logger.info(f"Syncing transactions from Yahoo: league={league_key} user={user_id}")
+            raw_data = await yahoo_service.get_league_transactions(league_key)
+            parsed = parse_transactions(raw_data)
+            new_count = txn_service.store_transactions(league_key, parsed)
+            logger.info(f"Synced {new_count} new transactions: league={league_key}")
+        except Exception as e:
+            logger.error(f"Failed to sync transactions: league={league_key} error={e}")
+            if total_count == 0:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Failed to fetch transactions from Yahoo: {str(e)}",
+                )
+
+    # Query from database
+    transactions = txn_service.get_transactions(
+        league_key=league_key,
+        team_key=team_key,
+        transaction_type=transaction_type,
+        limit=limit,
+        offset=offset,
+    )
+
+    # Format response
+    result = []
+    for txn in transactions:
+        txn_data = {
+            "transaction_id": txn.transaction_id,
+            "type": txn.type,
+            "status": txn.status,
+            "timestamp": txn.timestamp,
+            "transaction_date": txn.transaction_date.isoformat() if txn.transaction_date else None,
+            "players": [
+                {
+                    "player_id": p.player_id,
+                    "player_name": p.player_name,
+                    "nba_team": p.nba_team,
+                    "position": p.position,
+                    "action_type": p.action_type,
+                    "source_type": p.source_type,
+                    "source_team_key": p.source_team_key,
+                    "source_team_name": p.source_team_name,
+                    "destination_type": p.destination_type,
+                    "destination_team_key": p.destination_team_key,
+                    "destination_team_name": p.destination_team_name,
+                }
+                for p in txn.players
+            ],
+        }
+        if txn.trader_team_key:
+            txn_data["trader_team_key"] = txn.trader_team_key
+        if txn.tradee_team_key:
+            txn_data["tradee_team_key"] = txn.tradee_team_key
+        result.append(txn_data)
+
+    total_count = txn_service.get_transaction_count(league_key)
+
+    return {
+        "transactions": result,
+        "total": total_count,
+        "limit": limit,
+        "offset": offset,
+        "synced": should_sync,
+        "new_transactions": new_count if should_sync else 0,
+    }
+
+
+@router.get("/league/{league_key}/transactions/sync")
+async def sync_transactions(
+    league_key: str,
+    db: Session = Depends(get_db),
+    yahoo_service: YahooAPIService = Depends(get_yahoo_service),
+    user: User = Depends(require_auth),
+) -> dict:
+    """
+    Fetch new transactions from Yahoo and store in database.
+
+    Returns count of new transactions added.
+
+    Args:
+        league_key: Yahoo league key
+    """
+    user_id = user.id
+    logger.info(f"Explicit transaction sync requested: league={league_key} user={user_id}")
+
     try:
-        return await yahoo_service.get_league_transactions(league_key, transaction_type)
+        raw_data = await yahoo_service.get_league_transactions(league_key)
+        parsed = parse_transactions(raw_data)
+
+        txn_service = TransactionService(db)
+        new_count = txn_service.store_transactions(league_key, parsed)
+        total_count = txn_service.get_transaction_count(league_key)
+
+        logger.info(f"Transaction sync complete: league={league_key} new={new_count} total={total_count}")
+
+        return {
+            "success": True,
+            "new_transactions": new_count,
+            "total_transactions": total_count,
+        }
     except Exception as e:
+        logger.error(f"Failed to sync transactions: league={league_key} error={e}")
         raise HTTPException(
             status_code=502,
-            detail=f"Failed to fetch transactions: {str(e)}",
+            detail=f"Failed to sync transactions from Yahoo: {str(e)}",
         )
+
+
+@router.get("/league/{league_key}/transactions/stats")
+async def get_transaction_stats(
+    league_key: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_auth),
+) -> dict:
+    """
+    Get transaction statistics for a league.
+
+    Returns:
+    - Manager activity (transaction counts per team)
+    - Most added players
+    - Most dropped players
+    """
+    txn_service = TransactionService(db)
+    stats = txn_service.get_transaction_stats(league_key)
+
+    return {
+        "total_transactions": stats["total_transactions"],
+        "manager_activity": stats["manager_activity"],
+        "most_added": stats["most_added"],
+        "most_dropped": stats["most_dropped"],
+    }
 
 
 @router.get("/league/{league_key}/matchups")

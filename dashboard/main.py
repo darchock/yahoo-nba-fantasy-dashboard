@@ -15,6 +15,7 @@ from app.logging_config import get_logger
 from dashboard.views.home import render_league_overview
 from dashboard.views.weekly import render_weekly_page
 from dashboard.views.periodical import render_periodical_page
+from dashboard.views.transactions import render_transactions_page
 
 # Load environment variables
 load_dotenv()
@@ -25,6 +26,9 @@ logger = get_logger(__name__)
 API_BASE_URL = os.getenv("API_BASE_URL", "https://localhost:8080")
 # Disable SSL verification for local dev with self-signed certs (set to "true" in production)
 VERIFY_SSL = os.getenv("VERIFY_SSL", "false").lower() == "true"
+
+# Log startup configuration
+logger.info(f"Dashboard starting - API_BASE_URL={API_BASE_URL}, VERIFY_SSL={VERIFY_SSL}")
 
 # Page config
 st.set_page_config(
@@ -140,6 +144,27 @@ def fetch_leagues(sync: bool = False) -> list:
     return []
 
 
+def check_backend_health() -> tuple[bool, str]:
+    """
+    Check if the FastAPI backend is reachable.
+
+    Returns:
+        Tuple of (is_healthy, error_message)
+    """
+    try:
+        with httpx.Client(verify=VERIFY_SSL, timeout=5.0) as client:
+            response = client.get(f"{API_BASE_URL}/health")
+            if response.status_code == 200:
+                return True, ""
+            return False, f"Backend returned status {response.status_code}"
+    except httpx.ConnectError as e:
+        return False, f"Cannot connect to backend at {API_BASE_URL}. Is the FastAPI server running?"
+    except httpx.ConnectTimeout:
+        return False, f"Connection to backend at {API_BASE_URL} timed out"
+    except Exception as e:
+        return False, f"Backend health check failed: {e}"
+
+
 def render_login_page() -> None:
     """Render the login page for unauthenticated users."""
     st.title("Yahoo Fantasy Basketball Dashboard")
@@ -166,11 +191,20 @@ def render_login_page() -> None:
         # Login button - redirects to FastAPI OAuth endpoint (same tab)
         login_url = f"{API_BASE_URL}/auth/yahoo/login"
         if st.button("Login with Yahoo", use_container_width=True, type="primary"):
-            # Use JavaScript to redirect in the same tab
-            st.markdown(
-                f'<meta http-equiv="refresh" content="0;url={login_url}">',
-                unsafe_allow_html=True,
-            )
+            # Check backend health before redirecting
+            logger.info(f"User clicked login - checking backend health at {API_BASE_URL}")
+            is_healthy, error_msg = check_backend_health()
+
+            if not is_healthy:
+                logger.error(f"Backend health check failed: {error_msg}")
+                st.error(f"**Cannot connect to backend server**\n\n{error_msg}\n\nMake sure the FastAPI server is running:\n```\npython -m uvicorn backend.main:app --host localhost --port 8080 --ssl-keyfile key.pem --ssl-certfile cert.pem\n```")
+            else:
+                logger.info(f"Backend healthy, redirecting to {login_url}")
+                # Use JavaScript to redirect in the same tab
+                st.markdown(
+                    f'<meta http-equiv="refresh" content="0;url={login_url}">',
+                    unsafe_allow_html=True,
+                )
 
         st.caption("You'll be redirected to Yahoo to authorize access to your fantasy data.")
 
@@ -212,7 +246,7 @@ def render_sidebar() -> None:
 
         # Page navigation
         st.subheader("Navigation")
-        page_options = ["Home", "Weekly", "Periodical"]
+        page_options = ["Home", "Weekly", "Periodical", "Transactions"]
         current_index = page_options.index(st.session_state.current_page) if st.session_state.current_page in page_options else 0
         page = st.radio(
             "Page",
@@ -276,6 +310,13 @@ def render_dashboard() -> None:
         )
     elif st.session_state.current_page == "Periodical":
         render_periodical_page(
+            api_base_url=API_BASE_URL,
+            auth_token=st.session_state.auth_token,
+            league_key=league_key,
+            verify_ssl=VERIFY_SSL,
+        )
+    elif st.session_state.current_page == "Transactions":
+        render_transactions_page(
             api_base_url=API_BASE_URL,
             auth_token=st.session_state.auth_token,
             league_key=league_key,

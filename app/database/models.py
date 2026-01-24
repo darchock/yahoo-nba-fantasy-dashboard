@@ -222,3 +222,57 @@ class JobLog(Base):
     completed_at = Column(DateTime, nullable=True)
     error_message = Column(Text, nullable=True)
     records_processed = Column(Integer, default=0)
+
+
+# Transaction Models
+
+
+class Transaction(Base):
+    """Individual transaction record from Yahoo Fantasy."""
+
+    __tablename__ = "transactions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    transaction_id = Column(String(20), nullable=False)  # Yahoo's transaction ID
+    league_key = Column(String(50), nullable=False, index=True)
+    type = Column(String(20), nullable=False)  # add, drop, trade, add/drop
+    status = Column(String(20), nullable=False)  # successful, etc.
+    timestamp = Column(Integer, nullable=False)  # Unix timestamp from Yahoo
+    transaction_date = Column(DateTime, nullable=False)  # Derived from timestamp
+    trader_team_key = Column(String(50), nullable=True)  # For trades
+    tradee_team_key = Column(String(50), nullable=True)  # For trades
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    # Relationship
+    players = relationship(
+        "TransactionPlayer", back_populates="transaction", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        UniqueConstraint("league_key", "transaction_id", name="uq_league_transaction"),
+    )
+
+
+class TransactionPlayer(Base):
+    """Player involved in a transaction."""
+
+    __tablename__ = "transaction_players"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    transaction_id = Column(
+        Integer, ForeignKey("transactions.id"), nullable=False, index=True
+    )
+    player_id = Column(String(20), nullable=False, index=True)
+    player_name = Column(String(100), nullable=False)
+    nba_team = Column(String(10), nullable=True)
+    position = Column(String(20), nullable=True)
+    action_type = Column(String(10), nullable=False)  # add, drop, trade
+    source_type = Column(String(20), nullable=True)  # waivers, freeagents, team
+    source_team_key = Column(String(50), nullable=True, index=True)
+    source_team_name = Column(String(100), nullable=True)  # Display name (supports RTL)
+    destination_type = Column(String(20), nullable=True)  # waivers, team
+    destination_team_key = Column(String(50), nullable=True, index=True)
+    destination_team_name = Column(String(100), nullable=True)  # Display name (supports RTL)
+
+    # Relationship
+    transaction = relationship("Transaction", back_populates="players")
