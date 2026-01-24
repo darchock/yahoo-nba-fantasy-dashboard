@@ -440,21 +440,6 @@ API now returns structured responses with cache metadata:
 ### Blockers
 None
 
-### Next Session (Session 6)
-Focus: Transactions Page and Polish
-
-1. **Create transactions page**
-   - Display recent adds, drops, trades
-   - Parse transaction data from Yahoo API
-
-2. **Add more visualizations**
-   - Charts for stat trends
-   - Team comparison charts
-
-3. **Polish and bug fixes**
-   - Test with real Yahoo data
-   - Handle edge cases (empty data, errors)
-
 ---
 
 ## Session 6 - 2026-01-22
@@ -545,6 +530,130 @@ Focus: Transactions Page and Trend Visualizations
 2. **Add trend visualizations**
    - Standings bump chart over time
    - Category performance trends
+
+3. **Polish and bug fixes**
+   - Test with real Yahoo data
+   - Handle edge cases (empty data, errors)
+
+
+---
+
+## Session 7 - 2026-01-24
+
+### Completed
+
+**Transactions Feature - Full Implementation:**
+
+1. **Database Models** (`app/database/models.py`)
+   - Added `Transaction` model for storing transaction records
+   - Added `TransactionPlayer` model for players involved in transactions
+   - Normalized structure: one Transaction can have multiple TransactionPlayers
+   - Proper indexes on league_key, player_id, team keys for query performance
+   - Unique constraint on (league_key, transaction_id) for deduplication
+
+2. **Transaction Parsing** (`app/parsing/transactions.py`)
+   - Created parsing module adapted from CLI reference
+   - `parse_transactions()` - Parse full Yahoo API response
+   - `parse_single_transaction()` - Parse individual transaction
+   - `parse_player_from_transaction()` - Extract player details
+   - `get_transaction_summary()` - Generate transaction statistics
+
+3. **Transaction Service** (`app/services/transactions.py`)
+   - Created `TransactionService` class for database operations
+   - `store_transactions()` - Store with automatic deduplication
+   - `get_transactions()` - Query with filters (type, team)
+   - `get_manager_activity()` - Transaction counts per team
+   - `get_most_added_players()` - Popular adds
+   - `get_most_dropped_players()` - Popular drops
+   - `get_transaction_stats()` - Comprehensive statistics
+
+4. **API Endpoints** (`backend/routes/api.py`)
+   - Rewrote `GET /api/league/{key}/transactions` - Now database-backed with sync
+   - Added `GET /api/league/{key}/transactions/sync` - Force sync from Yahoo
+   - Added `GET /api/league/{key}/transactions/stats` - Statistics endpoint
+
+5. **Streamlit View** (`dashboard/views/transactions.py`)
+   - Created full transactions page with 4 tabs:
+     - Recent Transactions - Shows individual transactions
+     - Manager Activity - Transaction counts per team
+     - Most Added - Popular player additions
+     - Most Dropped - Popular player drops
+   - Sync button to fetch new transactions from Yahoo
+   - Team name resolution via API
+
+6. **Dashboard Navigation** (`dashboard/main.py`)
+   - Added "Transactions" to sidebar navigation
+   - Integrated transactions page rendering
+
+7. **Tests** (`tests/test_transactions.py`)
+   - 15 comprehensive tests for parsing and service
+   - Tests cover: add, drop, trade, add/drop transactions
+   - Tests cover: deduplication, filtering, statistics
+
+### Architecture Highlights
+- **Incremental Fetching**: Only new transactions are stored (dedupe by transaction_id)
+- **Database-Backed**: No JSON caching, normalized tables for efficient queries
+- **No Refresh Needed**: Transactions are immutable, only fetch new ones
+- **Server-Side Processing**: All parsing happens in FastAPI, Streamlit just renders
+
+### Files Created/Modified
+```
+app/database/
+└── models.py                  # MODIFIED - Added Transaction, TransactionPlayer
+
+app/parsing/
+└── transactions.py            # NEW - Transaction parsing
+
+app/services/
+└── transactions.py            # NEW - Transaction service
+
+backend/routes/
+└── api.py                     # MODIFIED - New/rewritten transaction endpoints
+
+dashboard/
+├── main.py                    # MODIFIED - Added Transactions navigation
+└── views/
+    └── transactions.py        # NEW - Transactions page
+
+tests/
+└── test_transactions.py       # NEW - 15 tests
+```
+
+### API Endpoints
+- `GET /api/league/{key}/transactions` - Get transactions (with filters, pagination)
+- `GET /api/league/{key}/transactions/sync` - Force sync from Yahoo
+- `GET /api/league/{key}/transactions/stats` - Manager activity, most added/dropped
+
+### Test Results
+- All 70 tests passing (existing 55 + new 15)
+- Parsing tests: 9 passed
+- Service tests: 6 passed
+
+### Current State
+- **Phase 1: COMPLETE**
+- **Phase 2: COMPLETE**
+- **Phase 3: IN PROGRESS**
+  - OAuth flow working ✓
+  - League selector ✓
+  - Standings with stats display ✓
+  - Weekly scoreboard page ✓
+  - Weekly totals tab ✓
+  - Weekly rankings tab ✓
+  - Weekly H2H matrix tab ✓
+  - Data caching with freshness indicator ✓
+  - **Transactions page ✓** (NEW)
+  - Logging utilities ✓
+  - Remaining: Periodical Analysis (multi-week aggregation)
+
+### Blockers
+None
+
+### Next Session (Session 8)
+Focus: Additional Features and Polish
+1. Test end-to-end with real Yahoo data
+2. Handle edge cases (empty data, errors)
+3. Consider: Periodical Analysis for multi-week stats aggregation
+4. Consider: Chart visualizations for trends
 
 ---
 
