@@ -399,6 +399,38 @@ class TransactionService:
 
         return sync_time
 
+    def get_league_last_sync_time(self, league_key: str) -> Optional[datetime]:
+        """
+        Get the most recent transaction sync time for a league (across ALL users).
+
+        This is used for cooldown checking - if ANY user has synced recently,
+        no one needs to sync again since transaction data is shared.
+
+        Args:
+            league_key: Yahoo league key
+
+        Returns:
+            Most recent sync datetime (UTC) or None if never synced by anyone
+        """
+        # Find the most recent sync across all users in this league
+        result = (
+            self.db.query(func.max(UserLeague.last_transaction_sync_at))
+            .filter(
+                UserLeague.league_key == league_key,
+                UserLeague.last_transaction_sync_at.isnot(None),
+            )
+            .scalar()
+        )
+
+        if result is None:
+            return None
+
+        # Ensure timezone awareness
+        if result.tzinfo is None:
+            result = result.replace(tzinfo=timezone.utc)
+
+        return result
+
     def update_last_sync_time(
         self, user_id: int, league_key: str
     ) -> bool:
@@ -444,10 +476,14 @@ class TransactionService:
         cooldown_minutes: int = TRANSACTION_SYNC_COOLDOWN_MINUTES,
     ) -> tuple[bool, Optional[int]]:
         """
-        Check if transaction sync is on cooldown.
+        Check if transaction sync is on cooldown for this league.
+
+        NOTE: This checks across ALL users in the league, not just the current user.
+        Transaction data is shared across all users in a league, so if anyone
+        has synced recently, no one else needs to sync again.
 
         Args:
-            user_id: User ID
+            user_id: User ID (kept for API compatibility, but not used for cooldown check)
             league_key: Yahoo league key
             cooldown_minutes: Cooldown period in minutes
 
@@ -456,7 +492,8 @@ class TransactionService:
             - (True, N) if on cooldown with N minutes remaining
             - (False, None) if not on cooldown (sync allowed)
         """
-        last_sync = self.get_last_sync_time(user_id, league_key)
+        # Check league-level sync time (most recent across ALL users)
+        last_sync = self.get_league_last_sync_time(league_key)
 
         if last_sync is None:
             return False, None
@@ -467,6 +504,10 @@ class TransactionService:
 
         if elapsed_minutes < cooldown_minutes:
             remaining = int(cooldown_minutes - elapsed_minutes)
+            logger.debug(
+                f"Sync on cooldown: league={league_key} "
+                f"elapsed={elapsed_minutes:.1f}m remaining={remaining}m"
+            )
             return True, remaining
 
         return False, None
@@ -483,30 +524,39 @@ class TransactionService:
 
         Returns:
             Dictionary with sync metadata:
-            - last_sync_at: ISO timestamp or None
-            - last_sync_ago_minutes: Minutes since last sync or None
-            - cooldown_active: Whether cooldown is active
+            - last_sync_at: ISO timestamp of league-level last sync (for cooldown)
+            - last_sync_ago_minutes: Minutes since league-level last sync
+            - cooldown_active: Whether cooldown is active (league-level)
             - cooldown_remaining_minutes: Minutes until sync allowed
+            - user_last_sync_at: ISO timestamp of this user's last sync (for display)
         """
-        last_sync = self.get_last_sync_time(user_id, league_key)
+        # Get league-level sync time (for cooldown calculation)
+        league_last_sync = self.get_league_last_sync_time(league_key)
 
-        if last_sync is None:
+        # Also get user's personal sync time (for display)
+        user_last_sync = self.get_last_sync_time(user_id, league_key)
+
+        # Check cooldown based on league-level sync
+        on_cooldown, remaining = self.is_sync_on_cooldown(user_id, league_key)
+
+        # Use league-level sync for display (since that's what matters for cooldown)
+        if league_last_sync is None:
             return {
                 "last_sync_at": None,
                 "last_sync_ago_minutes": None,
                 "cooldown_active": False,
                 "cooldown_remaining_minutes": None,
+                "user_last_sync_at": user_last_sync.isoformat() if user_last_sync else None,
             }
 
         now = datetime.now(timezone.utc)
-        elapsed = now - last_sync
+        elapsed = now - league_last_sync
         elapsed_minutes = int(elapsed.total_seconds() / 60)
 
-        on_cooldown, remaining = self.is_sync_on_cooldown(user_id, league_key)
-
         return {
-            "last_sync_at": last_sync.isoformat(),
+            "last_sync_at": league_last_sync.isoformat(),
             "last_sync_ago_minutes": elapsed_minutes,
             "cooldown_active": on_cooldown,
             "cooldown_remaining_minutes": remaining,
+            "user_last_sync_at": user_last_sync.isoformat() if user_last_sync else None,
         }
