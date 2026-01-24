@@ -115,8 +115,16 @@ def check_auth_status() -> Optional[dict]:
             response = client.get("/auth/yahoo/me")
             if response.status_code == 200:
                 return response.json()
-    except Exception:
-        pass
+            elif response.status_code == 401:
+                logger.debug("Auth check returned 401 - token expired or invalid")
+            else:
+                logger.warning(f"Auth check returned unexpected status: {response.status_code}")
+    except httpx.TimeoutException:
+        logger.warning("Auth check timed out")
+    except httpx.RequestError as e:
+        logger.warning(f"Auth check network error: {e}")
+    except Exception as e:
+        logger.warning(f"Auth check failed unexpectedly: {e}")
 
     return None
 
