@@ -790,6 +790,8 @@ async def get_league_transactions(
             raw_data = await yahoo_service.get_league_transactions(league_key)
             parsed = parse_transactions(raw_data)
             new_count = txn_service.store_transactions(league_key, parsed)
+            # Update last sync time
+            txn_service.update_last_sync_time(user_id, league_key)
             logger.info(f"Synced {new_count} new transactions: league={league_key}")
         except Exception as e:
             logger.error(f"Failed to sync transactions: league={league_key} error={e}")
@@ -842,6 +844,9 @@ async def get_league_transactions(
 
     total_count = txn_service.get_transaction_count(league_key)
 
+    # Get sync metadata for the response
+    sync_meta = txn_service.get_sync_metadata(user_id, league_key)
+
     return {
         "transactions": result,
         "total": total_count,
@@ -849,12 +854,16 @@ async def get_league_transactions(
         "offset": offset,
         "synced": should_sync,
         "new_transactions": new_count if should_sync else 0,
+        "last_sync_at": sync_meta.get("last_sync_at"),
+        "cooldown_active": sync_meta.get("cooldown_active", False),
+        "cooldown_remaining_minutes": sync_meta.get("cooldown_remaining_minutes"),
     }
 
 
 @router.get("/league/{league_key}/transactions/sync")
 async def sync_transactions(
     league_key: str,
+    force: bool = False,
     db: Session = Depends(get_db),
     yahoo_service: YahooAPIService = Depends(get_yahoo_service),
     user: User = Depends(require_auth),
@@ -862,21 +871,49 @@ async def sync_transactions(
     """
     Fetch new transactions from Yahoo and store in database.
 
+    Respects a 2-hour cooldown between syncs unless force=True.
+
     Returns count of new transactions added.
 
     Args:
         league_key: Yahoo league key
+        force: If True, bypass cooldown and sync anyway
     """
     user_id = user.id
-    logger.info(f"Explicit transaction sync requested: league={league_key} user={user_id}")
+    txn_service = TransactionService(db)
+
+    # Check cooldown (unless force is True)
+    if not force:
+        on_cooldown, remaining = txn_service.is_sync_on_cooldown(user_id, league_key)
+        if on_cooldown:
+            logger.info(
+                f"Transaction sync skipped (cooldown): league={league_key} "
+                f"user={user_id} remaining={remaining}min"
+            )
+            sync_meta = txn_service.get_sync_metadata(user_id, league_key)
+            total_count = txn_service.get_transaction_count(league_key)
+            return {
+                "success": True,
+                "new_transactions": 0,
+                "total_transactions": total_count,
+                "skipped": True,
+                "cooldown_active": True,
+                "cooldown_remaining_minutes": remaining,
+                "last_sync_at": sync_meta.get("last_sync_at"),
+            }
+
+    logger.info(f"Transaction sync requested: league={league_key} user={user_id} force={force}")
 
     try:
         raw_data = await yahoo_service.get_league_transactions(league_key)
         parsed = parse_transactions(raw_data)
 
-        txn_service = TransactionService(db)
         new_count = txn_service.store_transactions(league_key, parsed)
         total_count = txn_service.get_transaction_count(league_key)
+
+        # Update last sync time
+        txn_service.update_last_sync_time(user_id, league_key)
+        sync_meta = txn_service.get_sync_metadata(user_id, league_key)
 
         logger.info(f"Transaction sync complete: league={league_key} new={new_count} total={total_count}")
 
@@ -884,6 +921,10 @@ async def sync_transactions(
             "success": True,
             "new_transactions": new_count,
             "total_transactions": total_count,
+            "skipped": False,
+            "cooldown_active": False,
+            "cooldown_remaining_minutes": None,
+            "last_sync_at": sync_meta.get("last_sync_at"),
         }
     except Exception as e:
         logger.error(f"Failed to sync transactions: league={league_key} error={e}")
@@ -891,6 +932,36 @@ async def sync_transactions(
             status_code=502,
             detail=f"Failed to sync transactions from Yahoo: {str(e)}",
         )
+
+
+@router.get("/league/{league_key}/transactions/sync-status")
+async def get_transaction_sync_status(
+    league_key: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_auth),
+) -> dict:
+    """
+    Get transaction sync status and metadata.
+
+    Returns cooldown status, last sync time, and whether auto-sync should happen.
+    """
+    user_id = user.id
+    txn_service = TransactionService(db)
+
+    sync_meta = txn_service.get_sync_metadata(user_id, league_key)
+    total_count = txn_service.get_transaction_count(league_key)
+
+    # Determine if auto-sync should happen (no transactions OR cooldown expired)
+    should_auto_sync = total_count == 0 or not sync_meta.get("cooldown_active", False)
+
+    return {
+        "total_transactions": total_count,
+        "last_sync_at": sync_meta.get("last_sync_at"),
+        "last_sync_ago_minutes": sync_meta.get("last_sync_ago_minutes"),
+        "cooldown_active": sync_meta.get("cooldown_active", False),
+        "cooldown_remaining_minutes": sync_meta.get("cooldown_remaining_minutes"),
+        "should_auto_sync": should_auto_sync,
+    }
 
 
 @router.get("/league/{league_key}/transactions/stats")

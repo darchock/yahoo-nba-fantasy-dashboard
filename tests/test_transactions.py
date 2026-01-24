@@ -4,10 +4,11 @@ Tests for the transactions feature.
 Tests cover:
 - Transaction parsing
 - Transaction service (storage and queries)
+- Sync tracking (cooldown management)
 """
 
 import pytest
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from app.parsing.transactions import (
     parse_player_from_transaction,
@@ -15,8 +16,11 @@ from app.parsing.transactions import (
     parse_transactions,
     get_transaction_summary,
 )
-from app.services.transactions import TransactionService
-from app.database.models import Transaction, TransactionPlayer
+from app.services.transactions import (
+    TransactionService,
+    TRANSACTION_SYNC_COOLDOWN_MINUTES,
+)
+from app.database.models import Transaction, TransactionPlayer, UserLeague, User
 
 
 class TestTransactionParsing:
@@ -607,3 +611,157 @@ class TestTransactionService:
         assert "manager_activity" in stats
         assert "most_added" in stats
         assert "most_dropped" in stats
+
+
+class TestSyncTracking:
+    """Tests for transaction sync tracking functionality."""
+
+    @pytest.fixture
+    def db_session(self):
+        """Get a test database session."""
+        from app.database.connection import get_db
+
+        db = next(get_db())
+        yield db
+        db.close()
+
+    @pytest.fixture
+    def test_user(self, db_session):
+        """Create a test user for sync tracking tests."""
+        user = User(
+            yahoo_guid="test_sync_user_guid",
+            email="test@example.com",
+            display_name="Test User",
+        )
+        db_session.add(user)
+        db_session.commit()
+        db_session.refresh(user)
+        yield user
+        # Cleanup
+        db_session.delete(user)
+        db_session.commit()
+
+    @pytest.fixture
+    def test_user_league(self, db_session, test_user):
+        """Create a test user-league association."""
+        user_league = UserLeague(
+            user_id=test_user.id,
+            league_key="test_sync_league_001",
+            league_id="12345",
+            league_name="Test Sync League",
+        )
+        db_session.add(user_league)
+        db_session.commit()
+        db_session.refresh(user_league)
+        yield user_league
+        # Cleanup
+        db_session.delete(user_league)
+        db_session.commit()
+
+    def test_get_last_sync_time_never_synced(self, db_session, test_user, test_user_league):
+        """Test getting last sync time when never synced."""
+        service = TransactionService(db_session)
+
+        last_sync = service.get_last_sync_time(test_user.id, test_user_league.league_key)
+
+        assert last_sync is None
+
+    def test_update_last_sync_time(self, db_session, test_user, test_user_league):
+        """Test updating last sync time."""
+        service = TransactionService(db_session)
+
+        # Update sync time
+        result = service.update_last_sync_time(test_user.id, test_user_league.league_key)
+
+        assert result is True
+
+        # Verify it was updated
+        last_sync = service.get_last_sync_time(test_user.id, test_user_league.league_key)
+        assert last_sync is not None
+        assert isinstance(last_sync, datetime)
+        # Should be very recent (within last minute)
+        age = datetime.now(timezone.utc) - last_sync
+        assert age.total_seconds() < 60
+
+    def test_update_last_sync_time_nonexistent_league(self, db_session, test_user):
+        """Test updating sync time for non-existent user-league."""
+        service = TransactionService(db_session)
+
+        result = service.update_last_sync_time(test_user.id, "nonexistent_league")
+
+        assert result is False
+
+    def test_is_sync_on_cooldown_never_synced(self, db_session, test_user, test_user_league):
+        """Test cooldown check when never synced."""
+        service = TransactionService(db_session)
+
+        on_cooldown, remaining = service.is_sync_on_cooldown(
+            test_user.id, test_user_league.league_key
+        )
+
+        assert on_cooldown is False
+        assert remaining is None
+
+    def test_is_sync_on_cooldown_recently_synced(self, db_session, test_user, test_user_league):
+        """Test cooldown check when recently synced."""
+        service = TransactionService(db_session)
+
+        # Set sync time to now
+        service.update_last_sync_time(test_user.id, test_user_league.league_key)
+
+        on_cooldown, remaining = service.is_sync_on_cooldown(
+            test_user.id, test_user_league.league_key
+        )
+
+        assert on_cooldown is True
+        assert remaining is not None
+        assert remaining > 0
+        assert remaining <= TRANSACTION_SYNC_COOLDOWN_MINUTES
+
+    def test_is_sync_on_cooldown_expired(self, db_session, test_user, test_user_league):
+        """Test cooldown check when cooldown has expired."""
+        service = TransactionService(db_session)
+
+        # Set sync time to past (beyond cooldown)
+        past_time = datetime.now(timezone.utc) - timedelta(
+            minutes=TRANSACTION_SYNC_COOLDOWN_MINUTES + 10
+        )
+        test_user_league.last_transaction_sync_at = past_time
+        db_session.commit()
+
+        on_cooldown, remaining = service.is_sync_on_cooldown(
+            test_user.id, test_user_league.league_key
+        )
+
+        assert on_cooldown is False
+        assert remaining is None
+
+    def test_get_sync_metadata_never_synced(self, db_session, test_user, test_user_league):
+        """Test getting sync metadata when never synced."""
+        service = TransactionService(db_session)
+
+        metadata = service.get_sync_metadata(test_user.id, test_user_league.league_key)
+
+        assert metadata["last_sync_at"] is None
+        assert metadata["last_sync_ago_minutes"] is None
+        assert metadata["cooldown_active"] is False
+        assert metadata["cooldown_remaining_minutes"] is None
+
+    def test_get_sync_metadata_recently_synced(self, db_session, test_user, test_user_league):
+        """Test getting sync metadata when recently synced."""
+        service = TransactionService(db_session)
+
+        # Set sync time to 30 minutes ago
+        past_time = datetime.now(timezone.utc) - timedelta(minutes=30)
+        test_user_league.last_transaction_sync_at = past_time
+        db_session.commit()
+
+        metadata = service.get_sync_metadata(test_user.id, test_user_league.league_key)
+
+        assert metadata["last_sync_at"] is not None
+        assert metadata["last_sync_ago_minutes"] is not None
+        assert metadata["last_sync_ago_minutes"] >= 29  # Allow for slight timing differences
+        assert metadata["last_sync_ago_minutes"] <= 31
+        assert metadata["cooldown_active"] is True
+        assert metadata["cooldown_remaining_minutes"] is not None
+        assert metadata["cooldown_remaining_minutes"] > 0

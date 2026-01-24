@@ -5,17 +5,22 @@ Handles:
 - Storing new transactions (with deduplication)
 - Querying transactions with filters
 - Computing transaction statistics
+- Sync metadata tracking (cooldown management)
 """
 
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any
 
 from sqlalchemy import func, desc
 from sqlalchemy.orm import Session
 
-from app.database.models import Transaction, TransactionPlayer
+from app.database.models import Transaction, TransactionPlayer, UserLeague
 from app.logging_config import get_logger
 
 logger = get_logger(__name__)
+
+# Default cooldown for transaction sync (in minutes)
+TRANSACTION_SYNC_COOLDOWN_MINUTES = 120  # 2 hours
 
 
 class TransactionService:
@@ -360,4 +365,148 @@ class TransactionService:
             "manager_activity": self.get_manager_activity(league_key),
             "most_added": self.get_most_added_players(league_key),
             "most_dropped": self.get_most_dropped_players(league_key),
+        }
+
+    def get_last_sync_time(
+        self, user_id: int, league_key: str
+    ) -> Optional[datetime]:
+        """
+        Get the last transaction sync time for a user-league pair.
+
+        Args:
+            user_id: User ID
+            league_key: Yahoo league key
+
+        Returns:
+            Last sync datetime (UTC) or None if never synced
+        """
+        user_league = (
+            self.db.query(UserLeague)
+            .filter(
+                UserLeague.user_id == user_id,
+                UserLeague.league_key == league_key,
+            )
+            .first()
+        )
+
+        if not user_league or not user_league.last_transaction_sync_at:
+            return None
+
+        # Ensure timezone awareness
+        sync_time = user_league.last_transaction_sync_at
+        if sync_time.tzinfo is None:
+            sync_time = sync_time.replace(tzinfo=timezone.utc)
+
+        return sync_time
+
+    def update_last_sync_time(
+        self, user_id: int, league_key: str
+    ) -> bool:
+        """
+        Update the last transaction sync time to now.
+
+        Args:
+            user_id: User ID
+            league_key: Yahoo league key
+
+        Returns:
+            True if updated, False if user-league not found
+        """
+        user_league = (
+            self.db.query(UserLeague)
+            .filter(
+                UserLeague.user_id == user_id,
+                UserLeague.league_key == league_key,
+            )
+            .first()
+        )
+
+        if not user_league:
+            logger.warning(
+                f"Cannot update sync time: UserLeague not found "
+                f"user={user_id} league={league_key}"
+            )
+            return False
+
+        user_league.last_transaction_sync_at = datetime.now(timezone.utc)
+        self.db.commit()
+
+        logger.debug(
+            f"Updated last_transaction_sync_at: "
+            f"user={user_id} league={league_key}"
+        )
+        return True
+
+    def is_sync_on_cooldown(
+        self,
+        user_id: int,
+        league_key: str,
+        cooldown_minutes: int = TRANSACTION_SYNC_COOLDOWN_MINUTES,
+    ) -> tuple[bool, Optional[int]]:
+        """
+        Check if transaction sync is on cooldown.
+
+        Args:
+            user_id: User ID
+            league_key: Yahoo league key
+            cooldown_minutes: Cooldown period in minutes
+
+        Returns:
+            Tuple of (is_on_cooldown, minutes_remaining)
+            - (True, N) if on cooldown with N minutes remaining
+            - (False, None) if not on cooldown (sync allowed)
+        """
+        last_sync = self.get_last_sync_time(user_id, league_key)
+
+        if last_sync is None:
+            return False, None
+
+        now = datetime.now(timezone.utc)
+        elapsed = now - last_sync
+        elapsed_minutes = elapsed.total_seconds() / 60
+
+        if elapsed_minutes < cooldown_minutes:
+            remaining = int(cooldown_minutes - elapsed_minutes)
+            return True, remaining
+
+        return False, None
+
+    def get_sync_metadata(
+        self, user_id: int, league_key: str
+    ) -> Dict[str, Any]:
+        """
+        Get sync metadata for display in UI.
+
+        Args:
+            user_id: User ID
+            league_key: Yahoo league key
+
+        Returns:
+            Dictionary with sync metadata:
+            - last_sync_at: ISO timestamp or None
+            - last_sync_ago_minutes: Minutes since last sync or None
+            - cooldown_active: Whether cooldown is active
+            - cooldown_remaining_minutes: Minutes until sync allowed
+        """
+        last_sync = self.get_last_sync_time(user_id, league_key)
+
+        if last_sync is None:
+            return {
+                "last_sync_at": None,
+                "last_sync_ago_minutes": None,
+                "cooldown_active": False,
+                "cooldown_remaining_minutes": None,
+            }
+
+        now = datetime.now(timezone.utc)
+        elapsed = now - last_sync
+        elapsed_minutes = int(elapsed.total_seconds() / 60)
+
+        on_cooldown, remaining = self.is_sync_on_cooldown(user_id, league_key)
+
+        return {
+            "last_sync_at": last_sync.isoformat(),
+            "last_sync_ago_minutes": elapsed_minutes,
+            "cooldown_active": on_cooldown,
+            "cooldown_remaining_minutes": remaining,
         }

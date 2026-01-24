@@ -336,10 +336,49 @@ def sync_transactions(
     api_base_url: str,
     auth_token: str,
     league_key: str,
+    force: bool = False,
     verify_ssl: bool = False,
-) -> tuple[bool, int]:
+) -> dict:
     """
     Trigger transaction sync with Yahoo API.
+
+    Args:
+        api_base_url: Base URL for the API
+        auth_token: JWT authentication token
+        league_key: Yahoo league key
+        force: If True, bypass cooldown
+        verify_ssl: Whether to verify SSL certificates
+
+    Returns:
+        Dict with sync result including cooldown info
+    """
+    result = fetch_api_data(
+        api_base_url=api_base_url,
+        auth_token=auth_token,
+        endpoint=f"/api/league/{league_key}/transactions/sync",
+        params={"force": str(force).lower()},
+        verify_ssl=verify_ssl,
+    )
+
+    if result is None:
+        return {
+            "success": False,
+            "new_transactions": 0,
+            "skipped": False,
+            "cooldown_active": False,
+        }
+
+    return result
+
+
+def fetch_sync_status(
+    api_base_url: str,
+    auth_token: str,
+    league_key: str,
+    verify_ssl: bool = False,
+) -> dict | None:
+    """
+    Fetch transaction sync status.
 
     Args:
         api_base_url: Base URL for the API
@@ -348,19 +387,29 @@ def sync_transactions(
         verify_ssl: Whether to verify SSL certificates
 
     Returns:
-        Tuple of (success, new_count)
+        Sync status dict or None if error
     """
-    result = fetch_api_data(
+    return fetch_api_data(
         api_base_url=api_base_url,
         auth_token=auth_token,
-        endpoint=f"/api/league/{league_key}/transactions/sync",
+        endpoint=f"/api/league/{league_key}/transactions/sync-status",
         verify_ssl=verify_ssl,
     )
 
-    if result is None:
-        return False, 0
 
-    return result.get("success", False), result.get("new_transactions", 0)
+def format_time_ago(minutes: int | None) -> str:
+    """Format minutes as a human-readable time ago string."""
+    if minutes is None:
+        return "Never"
+    if minutes < 1:
+        return "Just now"
+    if minutes < 60:
+        return f"{minutes} min ago"
+    hours = minutes // 60
+    if hours < 24:
+        return f"{hours}h ago"
+    days = hours // 24
+    return f"{days}d ago"
 
 
 def render_transactions_page(
@@ -380,23 +429,80 @@ def render_transactions_page(
     """
     st.title("Transactions")
 
-    # Sync button
-    col1, col2 = st.columns([1, 4])
+    # Fetch sync status
+    sync_status = fetch_sync_status(
+        api_base_url=api_base_url,
+        auth_token=auth_token,
+        league_key=league_key,
+        verify_ssl=verify_ssl,
+    )
+
+    # Default values if status fetch fails
+    cooldown_active = False
+    cooldown_remaining = None
+    last_sync_ago = None
+    total_transactions = 0
+    should_auto_sync = False
+
+    if sync_status:
+        cooldown_active = sync_status.get("cooldown_active", False)
+        cooldown_remaining = sync_status.get("cooldown_remaining_minutes")
+        last_sync_ago = sync_status.get("last_sync_ago_minutes")
+        total_transactions = sync_status.get("total_transactions", 0)
+        should_auto_sync = sync_status.get("should_auto_sync", False)
+
+    # Auto-sync on page load if needed (no transactions or cooldown expired)
+    # Use session state to prevent repeated auto-syncs on same page load
+    auto_sync_key = f"auto_sync_{league_key}"
+    if should_auto_sync and not st.session_state.get(auto_sync_key):
+        st.session_state[auto_sync_key] = True
+        with st.spinner("Syncing transactions from Yahoo..."):
+            result = sync_transactions(
+                api_base_url=api_base_url,
+                auth_token=auth_token,
+                league_key=league_key,
+                verify_ssl=verify_ssl,
+            )
+            if result.get("success") and result.get("new_transactions", 0) > 0:
+                st.toast(f"Synced {result['new_transactions']} new transactions!")
+                st.rerun()
+
+    # Sync button row with status
+    col1, col2, col3 = st.columns([1, 2, 2])
+
     with col1:
-        if st.button("Sync Transactions", type="primary"):
+        # Disable button if on cooldown
+        button_disabled = cooldown_active
+        button_label = "Sync Transactions"
+        if cooldown_active and cooldown_remaining:
+            button_label = f"Sync (wait {cooldown_remaining}m)"
+
+        if st.button(button_label, type="primary", disabled=button_disabled):
             with st.spinner("Fetching from Yahoo..."):
-                success, new_count = sync_transactions(
+                result = sync_transactions(
                     api_base_url=api_base_url,
                     auth_token=auth_token,
                     league_key=league_key,
                     verify_ssl=verify_ssl,
                 )
-                if success:
+                if result.get("success"):
+                    new_count = result.get("new_transactions", 0)
                     if new_count > 0:
                         st.success(f"Added {new_count} new transactions!")
                     else:
                         st.info("No new transactions found.")
+                    # Clear auto-sync flag to allow next auto-sync after cooldown
+                    st.session_state[auto_sync_key] = False
                     st.rerun()
+
+    with col2:
+        # Show last sync time
+        sync_time_str = format_time_ago(last_sync_ago)
+        st.caption(f"Last sync: {sync_time_str}")
+
+    with col3:
+        # Show total transactions
+        st.caption(f"Total: {total_transactions} transactions")
 
     # Fetch team name map for display
     team_name_map = fetch_team_name_map(

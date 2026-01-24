@@ -85,6 +85,8 @@ class UserLeague(Base):
     num_teams = Column(Integer, nullable=True)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    # Transaction sync tracking
+    last_transaction_sync_at = Column(DateTime, nullable=True)
 
     # Relationships
     user = relationship("User", back_populates="leagues")
