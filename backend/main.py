@@ -1,5 +1,8 @@
 """
 FastAPI backend application entry point.
+
+Run with:
+    python -m uvicorn backend.main:app --host localhost --port 8080 --ssl-keyfile key.pem --ssl-certfile cert.pem --reload
 """
 
 from contextlib import asynccontextmanager
@@ -17,6 +20,9 @@ from backend.routes import auth, api
 from backend.routes.auth import callback as oauth_callback
 
 logger = get_logger(__name__)
+
+# Log immediately when module is imported (helps debug startup issues)
+logger.info("Backend module loaded - initializing FastAPI application")
 
 
 @asynccontextmanager
