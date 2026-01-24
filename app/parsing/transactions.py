@@ -8,7 +8,10 @@ Extracts: transaction type, timestamp, players involved, source/destination info
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from app.logging_config import get_logger
 from app.parsing.helpers import safe_get, extract_from_list_of_dicts
+
+logger = get_logger(__name__)
 
 
 def parse_player_from_transaction(player_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -160,8 +163,8 @@ def parse_transactions(raw_response: Dict[str, Any]) -> List[Dict[str, Any]]:
                 if parsed and parsed.get("transaction_id"):
                     result.append(parsed)
 
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Failed to parse transactions: {e}")
 
     return result
 
