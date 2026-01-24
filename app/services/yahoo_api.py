@@ -11,12 +11,61 @@ from urllib.parse import urlencode
 
 import httpx
 from sqlalchemy.orm import Session
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+    before_sleep_log,
+)
 
 from app.config import settings
 from app.database.models import User, OAuthToken
 from app.logging_config import get_logger
 
 logger = get_logger(__name__)
+
+
+# Custom exceptions for better error handling
+class YahooAPIError(Exception):
+    """Base exception for Yahoo API errors."""
+
+    def __init__(self, message: str, status_code: Optional[int] = None):
+        self.message = message
+        self.status_code = status_code
+        super().__init__(self.message)
+
+
+class YahooRateLimitError(YahooAPIError):
+    """Raised when Yahoo API rate limit is exceeded (HTTP 429)."""
+
+    def __init__(self, retry_after: Optional[int] = None):
+        self.retry_after = retry_after
+        message = "Yahoo API rate limit exceeded"
+        if retry_after:
+            message += f" (retry after {retry_after}s)"
+        super().__init__(message, status_code=429)
+
+
+class YahooAuthError(YahooAPIError):
+    """Raised when authentication fails (HTTP 401)."""
+
+    def __init__(self, message: str = "Yahoo API authentication failed"):
+        super().__init__(message, status_code=401)
+
+
+class YahooConnectionError(YahooAPIError):
+    """Raised when connection to Yahoo API fails."""
+
+    def __init__(self, message: str = "Unable to connect to Yahoo API"):
+        super().__init__(message)
+
+
+class YahooTimeoutError(YahooAPIError):
+    """Raised when Yahoo API request times out."""
+
+    def __init__(self, message: str = "Yahoo API request timed out"):
+        super().__init__(message)
 
 
 class YahooAPIService:
@@ -219,7 +268,7 @@ class YahooAPIService:
         params: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
-        Make an authenticated request to the Yahoo Fantasy API.
+        Make an authenticated request to the Yahoo Fantasy API with retry logic.
 
         Args:
             endpoint: The API endpoint (relative to base URL)
@@ -230,12 +279,16 @@ class YahooAPIService:
             JSON response data
 
         Raises:
-            Exception: If unable to get valid token or request fails
+            YahooAuthError: If unable to get valid token
+            YahooRateLimitError: If rate limit exceeded (HTTP 429)
+            YahooConnectionError: If connection fails
+            YahooTimeoutError: If request times out
+            YahooAPIError: For other API errors
         """
         access_token = await self.get_valid_access_token()
         if not access_token:
             logger.error("Unable to obtain valid access token for Yahoo API request")
-            raise Exception("Unable to obtain valid access token")
+            raise YahooAuthError("Unable to obtain valid access token")
 
         headers = {"Authorization": f"Bearer {access_token}"}
 
@@ -251,20 +304,108 @@ class YahooAPIService:
         user_id = self.user.id if self.user else "unknown"
         logger.info(f"Yahoo API request: {method} {endpoint} params={log_params or None} user={user_id}")
 
+        return await self._execute_request_with_retry(
+            method, url, headers, params, endpoint, user_id
+        )
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        retry=retry_if_exception_type((httpx.TimeoutException, httpx.ConnectError)),
+        before_sleep=before_sleep_log(logger, log_level=20),  # INFO level
+        reraise=True,
+    )
+    async def _execute_request_with_retry(
+        self,
+        method: str,
+        url: str,
+        headers: Dict[str, str],
+        params: Dict[str, Any],
+        endpoint: str,
+        user_id: Any,
+    ) -> Dict[str, Any]:
+        """
+        Execute the actual HTTP request with retry logic for transient failures.
+
+        Uses tenacity for automatic retry with exponential backoff on:
+        - Connection errors
+        - Timeout errors
+
+        Does NOT retry on:
+        - Rate limit errors (429) - handled specially
+        - Auth errors (401) - need re-authentication
+        - Other HTTP errors (4xx, 5xx)
+        """
         start_time = time.time()
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.request(
                     method, url, headers=headers, params=params
                 )
-                response.raise_for_status()
+
                 elapsed_ms = (time.time() - start_time) * 1000
-                logger.info(f"Yahoo API response: {endpoint} status={response.status_code} time={elapsed_ms:.0f}ms")
-                return response.json()
+
+                # Handle specific status codes
+                if response.status_code == 429:
+                    retry_after = response.headers.get("Retry-After")
+                    retry_seconds = int(retry_after) if retry_after else None
+                    logger.warning(
+                        f"Yahoo API rate limit: {endpoint} retry_after={retry_seconds}s user={user_id}"
+                    )
+                    raise YahooRateLimitError(retry_after=retry_seconds)
+
+                if response.status_code == 401:
+                    logger.error(f"Yahoo API auth error: {endpoint} user={user_id}")
+                    raise YahooAuthError("Yahoo API returned 401 - token may be invalid")
+
+                # Raise for other error status codes
+                response.raise_for_status()
+
+                logger.info(
+                    f"Yahoo API response: {endpoint} status={response.status_code} time={elapsed_ms:.0f}ms"
+                )
+
+                # Parse JSON response
+                try:
+                    return response.json()
+                except Exception as e:
+                    logger.error(f"Yahoo API JSON parse error: {endpoint} error={e}")
+                    raise YahooAPIError(f"Failed to parse Yahoo API response: {e}")
+
+        except httpx.TimeoutException as e:
+            elapsed_ms = (time.time() - start_time) * 1000
+            logger.warning(
+                f"Yahoo API timeout: {endpoint} time={elapsed_ms:.0f}ms user={user_id} (will retry)"
+            )
+            raise  # Let tenacity retry
+
+        except httpx.ConnectError as e:
+            elapsed_ms = (time.time() - start_time) * 1000
+            logger.warning(
+                f"Yahoo API connection error: {endpoint} error={e} user={user_id} (will retry)"
+            )
+            raise  # Let tenacity retry
+
+        except (YahooRateLimitError, YahooAuthError, YahooAPIError):
+            # Re-raise our custom exceptions without wrapping
+            raise
+
         except httpx.HTTPStatusError as e:
             elapsed_ms = (time.time() - start_time) * 1000
-            logger.error(f"Yahoo API error: {endpoint} status={e.response.status_code} time={elapsed_ms:.0f}ms")
-            raise
+            logger.error(
+                f"Yahoo API HTTP error: {endpoint} status={e.response.status_code} time={elapsed_ms:.0f}ms user={user_id}"
+            )
+            raise YahooAPIError(
+                f"Yahoo API error: HTTP {e.response.status_code}",
+                status_code=e.response.status_code,
+            )
+
+        except Exception as e:
+            elapsed_ms = (time.time() - start_time) * 1000
+            logger.error(
+                f"Yahoo API unexpected error: {endpoint} error={e} time={elapsed_ms:.0f}ms user={user_id}"
+            )
+            raise YahooAPIError(f"Unexpected error calling Yahoo API: {e}")
 
     # Convenience methods for common API calls
 
