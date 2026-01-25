@@ -95,17 +95,68 @@ Legend: `[ ]` pending | `[x]` done | `[~]` in progress | `[-]` skipped
 
 ## Phase 4: Refactor Visualizations
 
-### Convert to Plotly
 - [x] Adapt totals_table.py -> Streamlit dataframe (Session 6)
 - [x] Adapt ranking_table.py -> Streamlit styled dataframe (Session 6)
 - [x] Adapt head_to_head.py -> Streamlit styled dataframe (Session 6)
-- [ ] Adapt standings_bump_chart.py -> Plotly line chart
-- [ ] Adapt transactions.py -> Plotly bar charts
-- [ ] Copy/adapt helper functions (RTL text, color gradients)
 
 ---
 
-## Phase 5: Scheduled Data Refresh
+## Phase 5: Architecture & Quality Improvements Before Deployment
+
+### Completed (Session 8)
+- [x] Add caching to `/league/{key}/info` endpoint
+- [x] Add caching to `/league/{key}/teams` endpoint
+- [x] Fix silent `except Exception: pass` patterns (add logging)
+- [x] Add global exception handler to backend
+- [x] Add retry logic with tenacity for Yahoo API calls
+- [x] Create custom exception classes for Yahoo API errors
+- [x] Add consistent error handling across all endpoints
+- [x] Fix redundant API calls in Transactions page (3 calls → 1)
+- [x] Fix transaction cooldown scoping (per-user → per-league)
+
+### Remaining - High Priority
+- [ ] Add request correlation IDs for tracing requests through the system
+- [ ] Change verbose INFO logs to DEBUG for routine operations
+- [ ] Create transaction/{team_key} endpoint, and add another My Transactions tab under Transactions view
+- [ ] Add input validation for API parameters (week bounds, league_key format)
+
+### Remaining Low Priority - Not a must
+- [ ] Mask OAuth tokens in logs (currently full tokens could appear in error logs)
+- [ ] Add league access validation (verify user can access requested league_key)
+- [ ] Add per-user API rate limiting at endpoint level
+
+- [ ] Extract duplicated `format_time_ago()` to shared utility module
+- [ ] Add structured logging (JSON format) for easier parsing
+- [ ] Add database connection pool monitoring
+- [ ] Cache periodical aggregation results (currently re-parses cached scoreboards)
+
+- [ ] Move hardcoded values to config (week range 1-19, 15-min cache TTL)
+- [ ] Add session lifecycle logging (creation, refresh, expiration)
+
+## Phase 6: Deployment
+
+### Questions to be ansewered
+- [ ] Explain Deployment process - where to deploy, and how - let's dialogue pros and cons
+- [ ] Where are logs going to be written to?
+- [ ] Are logs even relevant in Streamlit dashboard? Currently there're logs in the format of "Dashboard page rendered" - what is the benefit for it? It seems debug logs and nothing more, need to omit them in Production
+
+### TODO for Deployment
+- [ ] Prepare for Streamlit Cloud deployment
+- [ ] Set up environment variables in Streamlit Cloud
+- [ ] Configure HTTPS callback URL for OAuth
+- [ ] Ensure scheduler runs as background process
+- [ ] Test on mobile devices
+- [ ] Test multi-league functionality
+
+## Nice to Have
+
+### Convert to Plotly
+- [ ] Adapt standings_bump_chart.py -> Plotly line chart
+- [ ] Adapt transactions.py -> Plotly bar charts
+
+## BACKLOG - Consider Dealing only in Improved React App and not with current Streamlit Dashboard
+
+## Scheduled Data Refresh
 
 ### Scheduler Setup
 - [ ] Create app/services/scheduler.py (APScheduler with FastAPI)
@@ -120,7 +171,7 @@ Legend: `[ ]` pending | `[x]` done | `[~]` in progress | `[-]` skipped
 
 ---
 
-## Phase 6: Remove Hardcoded Data
+## Remove Hardcoded Data
 
 - [ ] Remove MANAGER_ID_TO_NAME_MAP dependency
 - [ ] Fetch team names dynamically from Yahoo API
@@ -128,18 +179,7 @@ Legend: `[ ]` pending | `[x]` done | `[~]` in progress | `[-]` skipped
 
 ---
 
-## Phase 7: Deployment
-
-- [ ] Prepare for Streamlit Cloud deployment
-- [ ] Set up environment variables in Streamlit Cloud
-- [ ] Configure HTTPS callback URL for OAuth
-- [ ] Ensure scheduler runs as background process
-- [ ] Test on mobile devices
-- [ ] Test multi-league functionality
-
----
-
-## Phase 8: Pick-a-Winner Game (Post-Launch)
+## Pick-a-Winner Game (Post-Launch)
 
 ### Backend
 - [ ] Create app/services/predictions.py (prediction logic)
@@ -158,45 +198,8 @@ Legend: `[ ]` pending | `[x]` done | `[~]` in progress | `[-]` skipped
 
 ---
 
-## Architecture & Quality Improvements
+## Smart Caching Edge Cases
 
-### Completed (Session 8)
-- [x] Add caching to `/league/{key}/info` endpoint
-- [x] Add caching to `/league/{key}/teams` endpoint
-- [x] Fix silent `except Exception: pass` patterns (add logging)
-- [x] Add global exception handler to backend
-- [x] Add retry logic with tenacity for Yahoo API calls
-- [x] Create custom exception classes for Yahoo API errors
-- [x] Add consistent error handling across all endpoints
-- [x] Fix redundant API calls in Transactions page (3 calls → 1)
-- [x] Fix transaction cooldown scoping (per-user → per-league)
-
-### Remaining - High Priority
-- [ ] Add request correlation IDs for tracing requests through the system
-- [ ] Mask OAuth tokens in logs (currently full tokens could appear in error logs)
-- [ ] Add league access validation (verify user can access requested league_key)
-- [ ] Add per-user API rate limiting at endpoint level
-
-### Remaining - Medium Priority
-- [ ] Extract duplicated `format_time_ago()` to shared utility module
-- [ ] Change verbose INFO logs to DEBUG for routine operations
-- [ ] Add structured logging (JSON format) for easier parsing
-- [ ] Add database connection pool monitoring
-- [ ] Cache periodical aggregation results (currently re-parses cached scoreboards)
-
-### Remaining - Low Priority
-- [ ] Move hardcoded values to config (week range 1-19, 15-min cache TTL)
-- [ ] Add input validation for API parameters (week bounds, league_key format)
-- [ ] Add session lifecycle logging (creation, refresh, expiration)
-
-### Test Fixes
-- [ ] Investigate and fix `test_get_manager_activity` test failure
-
----
-
-## Discovered During Development
-
-### Smart Caching Edge Cases
 Current implementation uses week number comparison (`week < current_week`) to determine if a week is complete. This covers most cases but has edge cases:
 
 1. **Week transition timing** - `current_week` may increment before previous week's data is fully finalized

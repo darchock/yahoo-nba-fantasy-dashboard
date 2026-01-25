@@ -766,10 +766,10 @@ None
 
 ### Next Session
 See BACKLOG.md "Architecture & Quality Improvements" section for remaining items:
-- Extract duplicated `format_time_ago()` to shared module
 - Add request correlation IDs
 - Input validation improvements
 - Move hardcoded values to config
+- Create My Transactions feature under Transactions view
 
 ---
 

@@ -20,16 +20,16 @@ The original CLI tool is at: `C:\Users\darch\Projects\Yahoo_NBA_Fantasy_Hub`
 2. FastAPI Backend - COMPLETE
 3. Streamlit Dashboard
 4. Refactor Visualizations
-5. Scheduled Data Refresh
-6. Remove Hardcoded Data
-7. Deployment
-8. Pick-a-Winner Game (post-launch enhancement)
+5. Architecture & Quality Improvements Before Deployment
+6. Deployment
+
+## Nice to Have - After Deployment
+7. Scheduled Data Refresh
+8. Remove Hardcoded Data
+9. Pick-a-Winner Game (post-launch enhancement)
 
 ## Current Task
-**Session 6 Focus:** Transactions Page and Polish
-1. Create transactions page with recent adds, drops, trades
-2. Add more visualizations (charts for stat trends, team comparisons)
-3. Test with real Yahoo data and handle edge cases
+**Phase 5 Focus:** Architecture & Quality Improvements Before Deployment
 
 ## Quick Links
 - [Work Plan](./work_plan.md) - High-level roadmap and architecture
