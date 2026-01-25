@@ -171,7 +171,7 @@ def extract_team_info(team_data: Dict[str, Any]) -> Dict[str, Any]:
         team_data: Team data from Yahoo API
 
     Returns:
-        Dictionary with team_key, team_id, name, manager info
+        Dictionary with team_key, team_id, name, manager info including guid
     """
     team_list = safe_get(team_data, "team", 0, default=[])
 
@@ -182,15 +182,18 @@ def extract_team_info(team_data: Dict[str, Any]) -> Dict[str, Any]:
     # Extract manager info
     managers = safe_get(team_list, "managers", default=[])
     manager_name = ""
+    manager_guid = ""
     if managers:
         manager = safe_get(managers, 0, "manager", default={})
         manager_name = safe_get(manager, "nickname", default="")
+        manager_guid = safe_get(manager, "guid", default="")
 
     return {
         "team_key": team_key,
         "team_id": team_id,
         "name": name,
         "manager_name": manager_name,
+        "manager_guid": manager_guid,
     }
 
 

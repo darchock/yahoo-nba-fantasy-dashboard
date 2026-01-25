@@ -171,36 +171,19 @@ def render_most_dropped_tab(
     st.dataframe(df, use_container_width=True, hide_index=True)
 
 
-def render_recent_transactions_tab(
-    api_base_url: str,
-    auth_token: str,
-    league_key: str,
-    verify_ssl: bool = False,
+def render_transactions_list(
+    transactions: list,
+    empty_message: str = "No transactions found.",
 ) -> None:
     """
-    Render the Recent Transactions tab showing individual transactions.
+    Render a list of transactions as a dataframe.
 
     Args:
-        api_base_url: Base URL for the API
-        auth_token: JWT authentication token
-        league_key: Yahoo league key
-        verify_ssl: Whether to verify SSL certificates
+        transactions: List of transaction dicts
+        empty_message: Message to show if no transactions
     """
-    result = fetch_api_data(
-        api_base_url=api_base_url,
-        auth_token=auth_token,
-        endpoint=f"/api/league/{league_key}/transactions",
-        params={"limit": 50},
-        verify_ssl=verify_ssl,
-    )
-
-    if result is None:
-        return
-
-    transactions = result.get("transactions", [])
-
     if not transactions:
-        st.info("No transactions found. Click 'Sync Transactions' to fetch from Yahoo.")
+        st.info(empty_message)
         return
 
     # Build readable transaction list
@@ -247,6 +230,93 @@ def render_recent_transactions_tab(
     df = pd.DataFrame(rows)
     st.dataframe(df, use_container_width=True, hide_index=True)
 
+
+def render_recent_transactions_tab(
+    api_base_url: str,
+    auth_token: str,
+    league_key: str,
+    verify_ssl: bool = False,
+) -> None:
+    """
+    Render the Recent Transactions tab showing individual transactions.
+
+    Args:
+        api_base_url: Base URL for the API
+        auth_token: JWT authentication token
+        league_key: Yahoo league key
+        verify_ssl: Whether to verify SSL certificates
+    """
+    result = fetch_api_data(
+        api_base_url=api_base_url,
+        auth_token=auth_token,
+        endpoint=f"/api/league/{league_key}/transactions",
+        params={"limit": 50},
+        verify_ssl=verify_ssl,
+    )
+
+    if result is None:
+        return
+
+    transactions = result.get("transactions", [])
+    render_transactions_list(
+        transactions,
+        empty_message="No transactions found. Click 'Sync Transactions' to fetch from Yahoo.",
+    )
+
+    # Show pagination info
+    total = result.get("total", 0)
+    shown = len(transactions)
+    if shown < total:
+        st.caption(f"Showing {shown} of {total} transactions")
+
+
+def render_my_transactions_tab(
+    api_base_url: str,
+    auth_token: str,
+    league_key: str,
+    user_team: dict | None,
+    verify_ssl: bool = False,
+) -> None:
+    """
+    Render the My Transactions tab showing only the current user's team transactions.
+
+    Args:
+        api_base_url: Base URL for the API
+        auth_token: JWT authentication token
+        league_key: Yahoo league key
+        user_team: User's team info dict (with team_key, name, etc.) or None
+        verify_ssl: Whether to verify SSL certificates
+    """
+    if user_team is None:
+        st.warning("Could not identify your team in this league.")
+        return
+
+    team_key = user_team.get("team_key")
+    team_name = user_team.get("name", "Your Team")
+
+    if not team_key:
+        st.warning("Could not find your team key.")
+        return
+
+    st.caption(f"Showing transactions for: **{team_name}**")
+
+    result = fetch_api_data(
+        api_base_url=api_base_url,
+        auth_token=auth_token,
+        endpoint=f"/api/league/{league_key}/transactions",
+        params={"team_key": team_key, "limit": 50},
+        verify_ssl=verify_ssl,
+    )
+
+    if result is None:
+        return
+
+    transactions = result.get("transactions", [])
+    render_transactions_list(
+        transactions,
+        empty_message=f"No transactions found for {team_name}.",
+    )
+
     # Show pagination info
     total = result.get("total", 0)
     shown = len(transactions)
@@ -291,6 +361,37 @@ def fetch_team_name_map(
             team_map[team_key] = team_name
 
     return team_map
+
+
+def fetch_user_team(
+    api_base_url: str,
+    auth_token: str,
+    league_key: str,
+    verify_ssl: bool = False,
+) -> dict | None:
+    """
+    Fetch the current user's team in a league.
+
+    Args:
+        api_base_url: Base URL for the API
+        auth_token: JWT authentication token
+        league_key: Yahoo league key
+        verify_ssl: Whether to verify SSL certificates
+
+    Returns:
+        User's team info dict or None if not found
+    """
+    result = fetch_api_data(
+        api_base_url=api_base_url,
+        auth_token=auth_token,
+        endpoint=f"/api/league/{league_key}/user/team",
+        verify_ssl=verify_ssl,
+    )
+
+    if result is None:
+        return None
+
+    return result.get("team")
 
 
 def sync_transactions(
@@ -473,6 +574,14 @@ def render_transactions_page(
         verify_ssl=verify_ssl,
     )
 
+    # Fetch user's team for "My Transactions" tab
+    user_team = fetch_user_team(
+        api_base_url=api_base_url,
+        auth_token=auth_token,
+        league_key=league_key,
+        verify_ssl=verify_ssl,
+    )
+
     # Fetch transaction stats once for all stats-related tabs
     # This avoids 3 separate API calls for Manager Activity, Most Added, Most Dropped
     stats_data = fetch_api_data(
@@ -485,8 +594,9 @@ def render_transactions_page(
     st.divider()
 
     # Content tabs
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "Recent Transactions",
+        "My Transactions",
         "Manager Activity",
         "Most Added",
         "Most Dropped",
@@ -501,13 +611,22 @@ def render_transactions_page(
         )
 
     with tab2:
+        render_my_transactions_tab(
+            api_base_url=api_base_url,
+            auth_token=auth_token,
+            league_key=league_key,
+            user_team=user_team,
+            verify_ssl=verify_ssl,
+        )
+
+    with tab3:
         render_manager_activity_tab(
             stats_data=stats_data,
             team_name_map=team_name_map,
         )
 
-    with tab3:
+    with tab4:
         render_most_added_tab(stats_data=stats_data)
 
-    with tab4:
+    with tab5:
         render_most_dropped_tab(stats_data=stats_data)
