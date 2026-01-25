@@ -26,6 +26,7 @@ from app.parsing.scoreboard import (
     parse_periodical_rankings,
 )
 from app.parsing.transactions import parse_transactions
+from app.parsing.helpers import extract_team_info, safe_get
 from app.services.transactions import TransactionService
 from app.services.yahoo_api import (
     YahooAPIService,
@@ -36,6 +37,7 @@ from app.services.yahoo_api import (
     YahooTimeoutError,
 )
 from backend.routes.auth import get_current_user
+from backend.correlation import get_correlation_id, log_prefix
 
 
 def handle_yahoo_api_error(e: Exception, context: str = "") -> HTTPException:
@@ -49,43 +51,48 @@ def handle_yahoo_api_error(e: Exception, context: str = "") -> HTTPException:
     Returns:
         HTTPException with appropriate status code and message
     """
+    cid = get_correlation_id()
     context_msg = f" while {context}" if context else ""
+
+    # Build base detail message with correlation ID for traceability
+    def detail_with_cid(msg: str) -> str:
+        return f"{msg} (ref: {cid})" if cid else msg
 
     if isinstance(e, YahooRateLimitError):
         detail = f"Yahoo API rate limit exceeded{context_msg}. Please try again later."
         if e.retry_after:
             detail += f" (retry after {e.retry_after} seconds)"
-        return HTTPException(status_code=429, detail=detail)
+        return HTTPException(status_code=429, detail=detail_with_cid(detail))
 
     if isinstance(e, YahooAuthError):
         return HTTPException(
             status_code=401,
-            detail=f"Yahoo authentication failed{context_msg}. Please log in again.",
+            detail=detail_with_cid(f"Yahoo authentication failed{context_msg}. Please log in again."),
         )
 
     if isinstance(e, YahooTimeoutError):
         return HTTPException(
             status_code=504,
-            detail=f"Yahoo API request timed out{context_msg}. Please try again.",
+            detail=detail_with_cid(f"Yahoo API request timed out{context_msg}. Please try again."),
         )
 
     if isinstance(e, YahooConnectionError):
         return HTTPException(
             status_code=502,
-            detail=f"Unable to connect to Yahoo API{context_msg}. Please try again later.",
+            detail=detail_with_cid(f"Unable to connect to Yahoo API{context_msg}. Please try again later."),
         )
 
     if isinstance(e, YahooAPIError):
         status_code = e.status_code or 502
         return HTTPException(
             status_code=status_code,
-            detail=f"Yahoo API error{context_msg}: {e.message}",
+            detail=detail_with_cid(f"Yahoo API error{context_msg}: {e.message}"),
         )
 
     # Generic fallback
     return HTTPException(
         status_code=502,
-        detail=f"Failed to communicate with Yahoo API{context_msg}: {str(e)}",
+        detail=detail_with_cid(f"Failed to communicate with Yahoo API{context_msg}: {str(e)}"),
     )
 
 logger = get_logger(__name__)
@@ -94,6 +101,59 @@ router = APIRouter()
 
 # Cache duration in minutes
 CACHE_DURATION_MINUTES = 15
+
+# Week bounds for NBA fantasy season
+MIN_WEEK = 1
+MAX_WEEK = 19
+
+
+def validate_week(week: Optional[int], required: bool = False) -> None:
+    """
+    Validate week parameter is within NBA fantasy season bounds.
+
+    Args:
+        week: Week number to validate (None allowed if not required)
+        required: If True, week cannot be None
+
+    Raises:
+        HTTPException: If week is invalid
+    """
+    if week is None:
+        if required:
+            raise HTTPException(
+                status_code=400,
+                detail="Week parameter is required",
+            )
+        return
+
+    if week < MIN_WEEK or week > MAX_WEEK:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Week must be between {MIN_WEEK} and {MAX_WEEK}",
+        )
+
+
+def validate_league_key(league_key: str) -> None:
+    """
+    Validate league_key matches expected Yahoo Fantasy format.
+
+    Expected format: {sport}.l.{league_id}
+    Examples: nba.l.12345, nfl.l.98765
+
+    Args:
+        league_key: League key to validate
+
+    Raises:
+        HTTPException: If league_key format is invalid
+    """
+    import re
+    # Pattern: sport abbreviation (2-4 chars), literal ".l.", then numeric league ID
+    pattern = r"^[a-z]{2,4}\.l\.\d+$"
+    if not re.match(pattern, league_key):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid league_key format. Expected format: sport.l.league_id (e.g., nba.l.12345)",
+        )
 
 
 def is_week_complete(week: int, current_week: int) -> bool:
@@ -420,7 +480,7 @@ async def get_league_info(
 
     # League info rarely changes - cache indefinitely (expires_at=None)
     cache = save_cached_data(db, league_key, data_type, raw_data, week=None, expires_at=None)
-    logger.info(f"Cached league_info: league={league_key} cache=indefinite")
+    logger.debug(f"Cached league_info: league={league_key} cache=indefinite")
 
     return {
         "data": raw_data,
@@ -463,10 +523,85 @@ async def get_league_teams(
 
     # Teams don't change mid-season - cache indefinitely (expires_at=None)
     cache = save_cached_data(db, league_key, data_type, raw_data, week=None, expires_at=None)
-    logger.info(f"Cached league_teams: league={league_key} cache=indefinite")
+    logger.debug(f"Cached league_teams: league={league_key} cache=indefinite")
 
     return {
         "data": raw_data,
+        "cache": format_cache_metadata(cache),
+    }
+
+
+@router.get("/league/{league_key}/user/team")
+async def get_user_team(
+    league_key: str,
+    refresh: bool = False,
+    yahoo_service: YahooAPIService = Depends(get_yahoo_service),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_auth),
+) -> dict:
+    """
+    Get the current user's team in a league.
+
+    Finds the team where the manager's Yahoo GUID matches the user's GUID.
+
+    Args:
+        league_key: Yahoo league key
+        refresh: Force refresh from Yahoo API, ignoring cache
+
+    Returns:
+        User's team info or null if not found
+    """
+    data_type = "league_teams"
+    user_id = user.id
+    user_guid = user.yahoo_guid
+
+    # Check cache first (unless refresh requested)
+    cache = None
+    if not refresh:
+        cache = get_cached_data(db, league_key, data_type, week=None)
+        if cache:
+            logger.debug(f"Cache hit: user_team lookup league={league_key} user={user_id}")
+            raw_data = cache.json_data
+        else:
+            logger.debug(f"Cache miss: user_team lookup league={league_key} user={user_id}")
+
+    if not cache or refresh:
+        # Fetch from Yahoo API
+        try:
+            logger.info(f"Fetching teams from Yahoo for user_team lookup: league={league_key} user={user_id}")
+            raw_data = await yahoo_service.get_league_teams(league_key)
+        except Exception as e:
+            logger.error(f"Failed to fetch teams: league={league_key} user={user_id} error={e}")
+            raise handle_yahoo_api_error(e, context="fetching teams for user team lookup")
+
+        # Cache indefinitely (teams don't change mid-season)
+        cache = save_cached_data(db, league_key, data_type, raw_data, week=None, expires_at=None)
+
+    # Parse teams and find user's team
+    teams_raw = safe_get(raw_data, "fantasy_content", "league", 1, "teams", default={})
+
+    user_team = None
+    for key, team_data in teams_raw.items():
+        if key == "count" or not isinstance(team_data, dict):
+            continue
+
+        team_info = extract_team_info(team_data)
+        if team_info.get("manager_guid") == user_guid:
+            user_team = {
+                "team_key": team_info.get("team_key"),
+                "team_id": team_info.get("team_id"),
+                "name": team_info.get("name"),
+                "manager_name": team_info.get("manager_name"),
+            }
+            break
+
+    if user_team:
+        logger.debug(f"Found user team: league={league_key} team={user_team['team_key']} user={user_id}")
+    else:
+        logger.debug(f"User team not found: league={league_key} user={user_id}")
+
+    return {
+        "team": user_team,
         "cache": format_cache_metadata(cache),
     }
 
@@ -487,14 +622,17 @@ async def get_league_standings(
 
     Args:
         league_key: Yahoo league key
-        week: Week number (None for season totals)
+        week: Week number (1-19, None for season totals)
         refresh: Force refresh from Yahoo API, ignoring cache
 
     Returns:
         Parsed standings data with cache metadata
     """
-    data_type = "standings"
+    # Validate inputs
+    validate_league_key(league_key)
+    validate_week(week)
 
+    data_type = "standings"
     user_id = user.id
 
     # Check cache first (unless refresh requested)
@@ -559,12 +697,16 @@ async def get_league_scoreboard(
 
     Args:
         league_key: Yahoo league key
-        week: Week number (defaults to current week if not specified)
+        week: Week number (1-19, defaults to current week if not specified)
         refresh: Force refresh from Yahoo API, ignoring cache
 
     Returns:
         Parsed scoreboard data with cache metadata
     """
+    # Validate inputs
+    validate_league_key(league_key)
+    validate_week(week)
+
     data_type = "scoreboard"
     user_id = user.id
 
@@ -767,16 +909,15 @@ async def get_league_periodical_totals(
     Returns:
         Aggregated totals data with cache metadata
     """
+    # Validate inputs
+    validate_league_key(league_key)
+    validate_week(start_week, required=True)
+    validate_week(end_week, required=True)
+
     if start_week > end_week:
         raise HTTPException(
             status_code=400,
             detail="start_week must be less than or equal to end_week",
-        )
-
-    if start_week < 1 or end_week > 19:
-        raise HTTPException(
-            status_code=400,
-            detail="Weeks must be between 1 and 19",
         )
 
     # Fetch scoreboard data for each week in the range
@@ -823,16 +964,15 @@ async def get_league_periodical_rankings(
     Returns:
         Rankings data with cache metadata
     """
+    # Validate inputs
+    validate_league_key(league_key)
+    validate_week(start_week, required=True)
+    validate_week(end_week, required=True)
+
     if start_week > end_week:
         raise HTTPException(
             status_code=400,
             detail="start_week must be less than or equal to end_week",
-        )
-
-    if start_week < 1 or end_week > 19:
-        raise HTTPException(
-            status_code=400,
-            detail="Weeks must be between 1 and 19",
         )
 
     # Fetch scoreboard data for each week in the range
