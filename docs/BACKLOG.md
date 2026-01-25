@@ -114,11 +114,14 @@ Legend: `[ ]` pending | `[x]` done | `[~]` in progress | `[-]` skipped
 - [x] Fix redundant API calls in Transactions page (3 calls → 1)
 - [x] Fix transaction cooldown scoping (per-user → per-league)
 
+### Completed (Session 9)
+- [x] Create `/league/{key}/user/team` endpoint and add "My Transactions" tab under Transactions view
+- [x] Add request correlation IDs for tracing requests through the system
+- [x] Change verbose INFO logs to DEBUG for routine caching operations
+- [x] Add input validation for API parameters (week bounds 1-19, league_key format validation)
+
 ### Remaining - High Priority
-- [ ] Add request correlation IDs for tracing requests through the system
-- [ ] Change verbose INFO logs to DEBUG for routine operations
-- [ ] Create transaction/{team_key} endpoint, and add another My Transactions tab under Transactions view
-- [ ] Add input validation for API parameters (week bounds, league_key format)
+(All high priority items completed)
 
 ### Remaining Low Priority - Not a must
 - [ ] Mask OAuth tokens in logs (currently full tokens could appear in error logs)
@@ -133,12 +136,14 @@ Legend: `[ ]` pending | `[x]` done | `[~]` in progress | `[-]` skipped
 - [ ] Move hardcoded values to config (week range 1-19, 15-min cache TTL)
 - [ ] Add session lifecycle logging (creation, refresh, expiration)
 
-## Phase 6: Deployment
+## Phase 6: Deployment and Questions
 
 ### Questions to be ansewered
 - [ ] Explain Deployment process - where to deploy, and how - let's dialogue pros and cons
 - [ ] Where are logs going to be written to?
 - [ ] Are logs even relevant in Streamlit dashboard? Currently there're logs in the format of "Dashboard page rendered" - what is the benefit for it? It seems debug logs and nothing more, need to omit them in Production
+- [ ] Correlation Id should we support in all requests for end-to-end traceability? Or just for error logs?
+- [ ] Why every login needs to involve triggering Yahoo? Why can't we use the cached token already stored in the db for existing users with valid tokens?
 
 ### TODO for Deployment
 - [ ] Prepare for Streamlit Cloud deployment

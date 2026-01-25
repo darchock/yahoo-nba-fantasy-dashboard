@@ -773,6 +773,76 @@ See BACKLOG.md "Architecture & Quality Improvements" section for remaining items
 
 ---
 
+## Session 9 - 2026-01-25
+
+### Completed
+
+**My Transactions Feature:**
+- Enhanced `extract_team_info()` in `app/parsing/helpers.py` to include `manager_guid`
+- Added `GET /api/league/{key}/user/team` endpoint to identify user's team in a league
+- Added "My Transactions" tab to the Transactions page
+- Filters transactions by user's team_key from stored database records
+
+**Request Correlation IDs:**
+- Created `backend/correlation.py` for correlation ID management
+- Added `CorrelationIdMiddleware` to generate unique request IDs
+- Correlation IDs included in:
+  - Response headers (`X-Correlation-ID`)
+  - Error responses (for traceability)
+  - Global exception handler logs
+
+**Logging Improvements:**
+- Changed verbose "Cached X" logs from INFO to DEBUG level
+- Routine caching operations no longer clutter INFO logs
+
+**Input Validation:**
+- Added `validate_week()` function (validates week is 1-19)
+- Added `validate_league_key()` function (validates format: `sport.l.league_id`)
+- Applied validation to key endpoints:
+  - `/league/{key}/standings`
+  - `/league/{key}/scoreboard`
+  - `/league/{key}/periodical-totals`
+  - `/league/{key}/periodical-rankings`
+- Replaced hardcoded week bounds with `MIN_WEEK`/`MAX_WEEK` constants
+
+### Files Created/Modified
+```
+backend/
+├── main.py                # MODIFIED - Added CorrelationIdMiddleware
+├── correlation.py         # NEW - Correlation ID context management
+└── routes/api.py          # MODIFIED - Validation, user team endpoint
+
+app/parsing/
+└── helpers.py             # MODIFIED - Added manager_guid extraction
+
+dashboard/views/
+└── transactions.py        # MODIFIED - Added My Transactions tab
+
+docs/
+├── BACKLOG.md             # MODIFIED - Marked tasks complete
+└── PROGRESS.md            # MODIFIED - Added Session 9
+```
+
+### Test Results
+- 77/78 tests passing (same pre-existing failure in `test_get_manager_activity`)
+
+### Current State
+- **Phase 1: COMPLETE**
+- **Phase 2: COMPLETE**
+- **Phase 3: IN PROGRESS**
+- **Phase 5: High Priority Items COMPLETE**
+  - All high-priority architecture & quality improvements done
+  - Ready for Phase 6 (Deployment) or low-priority items
+
+### Blockers
+None
+
+### Next Session
+- Phase 6: Deployment preparation OR
+- Low-priority quality improvements from BACKLOG.md
+
+---
+
 <!-- Template for new sessions:
 
 ## Session N - YYYY-MM-DD
