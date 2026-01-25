@@ -137,8 +137,9 @@ def validate_league_key(league_key: str) -> None:
     """
     Validate league_key matches expected Yahoo Fantasy format.
 
-    Expected format: {sport}.l.{league_id}
-    Examples: nba.l.12345, nfl.l.98765
+    Expected formats:
+    - {sport}.l.{league_id} - e.g., nba.l.12345
+    - {game_id}.l.{league_id} - e.g., 418.l.12345 (game_id is numeric)
 
     Args:
         league_key: League key to validate
@@ -147,12 +148,13 @@ def validate_league_key(league_key: str) -> None:
         HTTPException: If league_key format is invalid
     """
     import re
-    # Pattern: sport abbreviation (2-4 chars), literal ".l.", then numeric league ID
-    pattern = r"^[a-z]{2,4}\.l\.\d+$"
+    # Pattern: sport abbreviation (2-4 lowercase letters) OR game_id (numeric),
+    # followed by literal ".l.", then numeric league ID
+    pattern = r"^([a-z]{2,4}|\d+)\.l\.\d+$"
     if not re.match(pattern, league_key):
         raise HTTPException(
             status_code=400,
-            detail="Invalid league_key format. Expected format: sport.l.league_id (e.g., nba.l.12345)",
+            detail="Invalid league_key format. Expected format: sport.l.league_id (e.g., nba.l.12345 or 418.l.12345)",
         )
 
 
@@ -629,8 +631,12 @@ async def get_league_standings(
         Parsed standings data with cache metadata
     """
     # Validate inputs
-    validate_league_key(league_key)
-    validate_week(week)
+    try:    
+        validate_league_key(league_key)
+        validate_week(week)
+    except HTTPException as ex:
+        logger.error(f"Validation error: league={league_key} week={week} user={user.id} error={ex.detail}")
+        raise
 
     data_type = "standings"
     user_id = user.id
@@ -704,8 +710,12 @@ async def get_league_scoreboard(
         Parsed scoreboard data with cache metadata
     """
     # Validate inputs
-    validate_league_key(league_key)
-    validate_week(week)
+    try:    
+        validate_league_key(league_key)
+        validate_week(week)
+    except HTTPException as ex:
+        logger.error(f"Validation error: league={league_key} week={week} user={user.id} error={ex.detail}")
+        raise
 
     data_type = "scoreboard"
     user_id = user.id
@@ -910,15 +920,21 @@ async def get_league_periodical_totals(
         Aggregated totals data with cache metadata
     """
     # Validate inputs
-    validate_league_key(league_key)
-    validate_week(start_week, required=True)
-    validate_week(end_week, required=True)
+    try:    
+        validate_league_key(league_key)
+        validate_week(start_week, required=True)
+        validate_week(end_week, required=True)
 
-    if start_week > end_week:
-        raise HTTPException(
-            status_code=400,
-            detail="start_week must be less than or equal to end_week",
-        )
+        if start_week > end_week:
+            raise HTTPException(
+                status_code=400,
+                detail="start_week must be less than or equal to end_week",
+            )
+        
+    except HTTPException as ex:
+        logger.error(f"Validation error: league={league_key} start_week={start_week} end_week={end_week} user={user.id} error={ex.detail}")
+        raise
+
 
     # Fetch scoreboard data for each week in the range
     parsed_scoreboards = []
@@ -965,16 +981,21 @@ async def get_league_periodical_rankings(
         Rankings data with cache metadata
     """
     # Validate inputs
-    validate_league_key(league_key)
-    validate_week(start_week, required=True)
-    validate_week(end_week, required=True)
+    try:    
+        validate_league_key(league_key)
+        validate_week(start_week, required=True)
+        validate_week(end_week, required=True)
 
-    if start_week > end_week:
-        raise HTTPException(
-            status_code=400,
-            detail="start_week must be less than or equal to end_week",
-        )
-
+        if start_week > end_week:
+            raise HTTPException(
+                status_code=400,
+                detail="start_week must be less than or equal to end_week",
+            )
+        
+    except HTTPException as ex:
+        logger.error(f"Validation error: league={league_key} start_week={start_week} end_week={end_week} user={user.id} error={ex.detail}")
+        raise
+    
     # Fetch scoreboard data for each week in the range
     parsed_scoreboards = []
     for week in range(start_week, end_week + 1):
