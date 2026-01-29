@@ -1,0 +1,8 @@
+[server]
+headless = true
+enableCORS = false
+enableXsrfProtection = true
+# Note: port and address are set via command line for Railway deployment
+
+[browser]
+gatherUsageStats = false

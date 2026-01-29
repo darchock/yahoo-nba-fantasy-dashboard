@@ -1,0 +1,13 @@
+# Railway configuration
+# Note: For this project, you'll create TWO services in Railway
+# pointing to the same repo, with different start commands.
+# See RAILWAY_DEPLOY.md for full instructions.
+
+[build]
+builder = "nixpacks"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3

@@ -93,6 +93,8 @@ app.add_middleware(
         "http://localhost:8501",  # Streamlit default
         "http://127.0.0.1:8501",
         "https://*.streamlit.app",  # Streamlit Cloud
+        "https://*.up.railway.app",  # Railway
+        # Production: Add your domain here, e.g., "https://your-domain.com"
     ],
     allow_credentials=True,
     allow_methods=["*"],

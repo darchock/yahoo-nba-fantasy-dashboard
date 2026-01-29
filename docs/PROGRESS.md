@@ -944,6 +944,56 @@ None
 
 ---
 
+## Session 11 - 2026-01-29
+
+### Completed
+
+**Deployment: AWS to Railway Migration**
+
+Originally attempted AWS EC2 deployment but encountered persistent SSH connectivity issues (connection timeouts despite correct security group, Network ACL, and route table configuration). After extensive troubleshooting across multiple instances and regions, switched to Railway for simpler deployment.
+
+**Railway Deployment Setup:**
+- Added `psycopg2-binary>=2.9.9` to both `pyproject.toml` and `requirements.txt`
+- Updated `app/config.py` to handle Railway's `postgres://` → `postgresql://` URL conversion
+- Updated `backend/main.py` CORS to include `*.up.railway.app`
+- Updated `.streamlit/config.toml` to remove hardcoded port/address (Railway sets dynamically)
+- Created `railway.toml` with deployment configuration
+- Created `RAILWAY_DEPLOY.md` with comprehensive step-by-step deployment guide
+- Created `docs/DEPLOYMENT_STATE.md` to save deployment state
+
+**AWS Cleanup Reminder:**
+- Terminate any running EC2 instances
+- Release Elastic IPs
+- Delete unused security groups
+
+### Files Created/Modified
+```
+app/config.py                  # MODIFIED - postgres:// URL conversion
+backend/main.py                # MODIFIED - Railway CORS
+.streamlit/config.toml         # MODIFIED - Removed hardcoded port/address
+railway.toml                   # NEW - Railway deployment config
+RAILWAY_DEPLOY.md              # NEW - Deployment guide
+docs/DEPLOYMENT_STATE.md       # NEW - Deployment state reference
+pyproject.toml                 # MODIFIED - Added psycopg2-binary
+requirements.txt               # MODIFIED - Added psycopg2-binary
+```
+
+### Current State
+- **Phase 1-5: COMPLETE**
+- **Phase 6: Deployment IN PROGRESS**
+  - Railway code changes complete
+  - Pending: Push to GitHub, Railway setup via dashboard
+
+### Blockers
+None
+
+### Next Session
+- Push changes to GitHub
+- Follow RAILWAY_DEPLOY.md to complete Railway setup
+- Update Yahoo Developer Console redirect URI
+
+---
+
 <!-- Template for new sessions:
 
 ## Session N - YYYY-MM-DD

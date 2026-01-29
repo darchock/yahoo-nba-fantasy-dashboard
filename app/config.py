@@ -36,7 +36,9 @@ class Settings:
     FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:8501")
 
     # Database
-    DATABASE_URL: str = os.getenv("DATABASE_URL", f"sqlite:///{BASE_DIR}/data/fantasy.db")
+    # Railway provides postgres:// but SQLAlchemy requires postgresql://
+    _raw_db_url: str = os.getenv("DATABASE_URL", f"sqlite:///{BASE_DIR}/data/fantasy.db")
+    DATABASE_URL: str = _raw_db_url.replace("postgres://", "postgresql://", 1) if _raw_db_url.startswith("postgres://") else _raw_db_url
 
     # Scheduler
     SCHEDULER_DAILY_HOUR: int = int(os.getenv("SCHEDULER_DAILY_HOUR", "4"))
