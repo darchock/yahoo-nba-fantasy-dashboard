@@ -42,6 +42,13 @@ class Settings:
     SCHEDULER_DAILY_HOUR: int = int(os.getenv("SCHEDULER_DAILY_HOUR", "4"))
     SCHEDULER_DAILY_MINUTE: int = int(os.getenv("SCHEDULER_DAILY_MINUTE", "0"))
 
+    # Cache refresh settings (lazy refresh at 6 AM Eastern daily)
+    CACHE_REFRESH_HOUR: int = int(os.getenv("CACHE_REFRESH_HOUR", "6"))
+    CACHE_REFRESH_TIMEZONE: str = os.getenv("CACHE_REFRESH_TIMEZONE", "America/New_York")
+
+    # Session settings
+    SESSION_EXPIRE_DAYS: int = int(os.getenv("SESSION_EXPIRE_DAYS", "30"))
+
     @classmethod
     def validate(cls) -> list[str]:
         """Validate required settings are present. Returns list of missing settings."""
