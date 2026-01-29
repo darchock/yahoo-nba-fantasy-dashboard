@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database.connection import get_db
-from app.database.models import User, AuthCode
+from app.database.models import User, AuthCode, UserSession
 from app.logging_config import get_logger
 from app.services.yahoo_api import YahooAPIService
 
@@ -95,6 +95,116 @@ def consume_auth_code(db: Session, code: str) -> Optional[int]:
     db.commit()
 
     return getattr(auth_code, "user_id", None)
+
+
+# Session management functions
+
+
+def cleanup_expired_sessions(db: Session) -> None:
+    """Remove expired sessions from database."""
+    db.query(UserSession).filter(UserSession.expires_at < datetime.now(timezone.utc)).delete()
+    db.commit()
+
+
+def create_user_session(db: Session, user_id: int) -> str:
+    """
+    Create a persistent session for browser cookie authentication.
+
+    Sessions last for SESSION_EXPIRE_DAYS (default 30 days) and allow users
+    to stay logged in across page refreshes.
+
+    Args:
+        db: Database session
+        user_id: User ID to create session for
+
+    Returns:
+        The session ID (to be stored in browser cookie)
+    """
+    # Clean up expired sessions periodically
+    cleanup_expired_sessions(db)
+
+    session_id = secrets.token_urlsafe(48)  # 64 chars base64
+    expires_at = datetime.now(timezone.utc) + timedelta(days=settings.SESSION_EXPIRE_DAYS)
+
+    user_session = UserSession(
+        session_id=session_id,
+        user_id=user_id,
+        expires_at=expires_at,
+    )
+    db.add(user_session)
+    db.commit()
+
+    logger.debug(f"Created session for user {user_id}")
+    return session_id
+
+
+def validate_session(db: Session, session_id: str) -> Optional[UserSession]:
+    """
+    Validate a session ID and return the session if valid.
+
+    Also updates the last_activity timestamp to keep the session alive.
+
+    Args:
+        db: Database session
+        session_id: Session ID from browser cookie
+
+    Returns:
+        UserSession if valid, None otherwise
+    """
+    session = db.query(UserSession).filter(
+        UserSession.session_id == session_id
+    ).first()
+
+    if not session:
+        return None
+
+    if session.is_expired:
+        # Clean up expired session
+        db.delete(session)
+        db.commit()
+        return None
+
+    # Update last activity (keep session alive)
+    session.touch()
+    db.commit()
+
+    return session
+
+
+def invalidate_session(db: Session, session_id: str) -> bool:
+    """
+    Invalidate a session (logout).
+
+    Args:
+        db: Database session
+        session_id: Session ID to invalidate
+
+    Returns:
+        True if session was found and deleted, False otherwise
+    """
+    result = db.query(UserSession).filter(
+        UserSession.session_id == session_id
+    ).delete()
+    db.commit()
+    return result > 0
+
+
+def invalidate_all_user_sessions(db: Session, user_id: int) -> int:
+    """
+    Invalidate all sessions for a user (logout everywhere).
+
+    Args:
+        db: Database session
+        user_id: User ID whose sessions to invalidate
+
+    Returns:
+        Number of sessions deleted
+    """
+    result = db.query(UserSession).filter(
+        UserSession.user_id == user_id
+    ).delete()
+    db.commit()
+    return result
 
 
 def create_access_token(user_id: int) -> str:
@@ -278,8 +388,11 @@ async def callback(
     # Generate short-lived auth code for Streamlit (more secure than JWT in URL)
     auth_code = create_auth_code(db, getattr(user, "id"))
 
-    # Redirect to frontend with auth code in URL
-    redirect_url = f"{settings.FRONTEND_URL}?{urlencode({'code': auth_code})}"
+    # Also create a persistent session for cookie-based auth
+    session_id = create_user_session(db, getattr(user, "id"))
+
+    # Redirect to frontend with auth code and session_id in URL
+    redirect_url = f"{settings.FRONTEND_URL}?{urlencode({'code': auth_code, 'session': session_id})}"
     logger.info(f"User {yahoo_guid[:8]}... authenticated successfully")
     return RedirectResponse(url=redirect_url)
 
@@ -332,6 +445,90 @@ async def exchange_code_for_token(
         "access_token": access_token,
         "token_type": "bearer",
     }
+
+
+@router.post("/session/validate")
+async def validate_session_endpoint(
+    session_id: str,
+    db: Session = Depends(get_db),
+) -> dict:
+    """
+    Validate a session ID from browser cookie.
+
+    Returns user info and a fresh JWT token if the session is valid.
+    This endpoint is called by Streamlit on page load to restore the session.
+
+    Args:
+        session_id: Session ID from browser cookie
+
+    Returns:
+        user: User information
+        access_token: Fresh JWT token for API calls
+        token_type: Always "bearer"
+
+    Raises:
+        401: If the session is invalid or expired
+    """
+    session = validate_session(db, session_id)
+
+    if not session:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or expired session",
+        )
+
+    # Get user info
+    user = db.query(User).filter(User.id == session.user_id).first()
+    if not user:
+        # User was deleted but session still exists
+        invalidate_session(db, session_id)
+        raise HTTPException(
+            status_code=401,
+            detail="User not found",
+        )
+
+    # Generate fresh JWT token
+    access_token = create_access_token(getattr(user, "id"))
+
+    logger.debug(f"Session validated for user {user.id}")
+    return {
+        "user": {
+            "id": user.id,
+            "yahoo_guid": user.yahoo_guid,
+            "display_name": user.display_name,
+            "email": user.email,
+            "has_valid_token": user.oauth_token is not None and not user.oauth_token.is_expired,
+        },
+        "access_token": access_token,
+        "token_type": "bearer",
+    }
+
+
+@router.post("/session/invalidate")
+async def invalidate_session_endpoint(
+    session_id: str,
+    db: Session = Depends(get_db),
+) -> dict:
+    """
+    Invalidate a session (logout).
+
+    This endpoint is called when the user clicks logout.
+    The browser should also clear the session cookie.
+
+    Args:
+        session_id: Session ID to invalidate
+
+    Returns:
+        status: "ok" if successful
+    """
+    deleted = invalidate_session(db, session_id)
+
+    if deleted:
+        logger.info("Session invalidated")
+    else:
+        logger.debug("Session not found (may have already expired)")
+
+    return {"status": "ok", "message": "Session invalidated"}
 
 
 @router.get("/me")

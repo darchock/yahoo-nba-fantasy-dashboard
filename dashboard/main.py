@@ -10,6 +10,7 @@ import streamlit as st
 import httpx
 from typing import Optional
 from dotenv import load_dotenv
+from streamlit_cookies_manager import EncryptedCookieManager
 
 from app.logging_config import get_logger
 from dashboard.views.home import render_league_overview
@@ -38,6 +39,20 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# Cookie encryption key (should match APP_SECRET_KEY or be derived from it)
+COOKIE_PASSWORD = os.getenv("APP_SECRET_KEY", "dev-secret-change-in-production")
+
+# Session cookie name
+SESSION_COOKIE_NAME = "fantasy_session"
+
+
+def get_cookie_manager() -> EncryptedCookieManager:
+    """Get the encrypted cookie manager instance."""
+    return EncryptedCookieManager(
+        prefix="fantasy_dashboard_",
+        password=COOKIE_PASSWORD,
+    )
+
 
 def init_session_state() -> None:
     """Initialize session state variables."""
@@ -53,13 +68,14 @@ def init_session_state() -> None:
         st.session_state.leagues = []
 
 
-def handle_oauth_callback() -> None:
+def handle_oauth_callback(cookies: EncryptedCookieManager) -> None:
     """Handle OAuth callback from URL parameters."""
     params = st.query_params
 
     # Check for authorization code in URL (set by FastAPI callback)
     if "code" in params:
         code = params["code"]
+        session_id = params.get("session")  # Also get session ID from URL
         # Clear the URL parameters immediately
         st.query_params.clear()
 
@@ -75,6 +91,13 @@ def handle_oauth_callback() -> None:
                 if response.status_code == 200:
                     token_data = response.json()
                     st.session_state.auth_token = token_data["access_token"]
+
+                    # Store session ID in cookie for persistence across refreshes
+                    if session_id:
+                        cookies[SESSION_COOKIE_NAME] = session_id
+                        cookies.save()
+                        logger.info("Session cookie saved for persistent auth")
+
                     logger.info("User authenticated successfully via OAuth")
                     st.rerun()
                 else:
@@ -89,6 +112,78 @@ def handle_oauth_callback() -> None:
     if "error" in params:
         st.error(f"Authentication failed: {params.get('error_description', params['error'])}")
         st.query_params.clear()
+
+
+def restore_session_from_cookie(cookies: EncryptedCookieManager) -> bool:
+    """
+    Try to restore session from browser cookie.
+
+    Validates the session with the backend and restores the auth token.
+
+    Returns:
+        True if session was restored, False otherwise
+    """
+    if st.session_state.auth_token:
+        # Already have a token, no need to restore
+        return True
+
+    session_id = cookies.get(SESSION_COOKIE_NAME)
+    if not session_id:
+        return False
+
+    logger.debug("Found session cookie, validating with backend")
+    try:
+        with httpx.Client(base_url=API_BASE_URL, verify=VERIFY_SSL, timeout=30.0) as client:
+            response = client.post(
+                "/auth/yahoo/session/validate",
+                params={"session_id": session_id},
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                st.session_state.auth_token = data["access_token"]
+                st.session_state.user_id = data["user"]["id"]
+                logger.info("Session restored from cookie")
+                return True
+            else:
+                # Session invalid/expired - clear the cookie
+                logger.debug("Session cookie invalid or expired, clearing")
+                del cookies[SESSION_COOKIE_NAME]
+                cookies.save()
+                return False
+    except Exception as e:
+        logger.warning(f"Failed to validate session: {e}")
+        return False
+
+
+def clear_session(cookies: EncryptedCookieManager) -> None:
+    """
+    Clear the session both locally and on the server.
+
+    Called when user logs out.
+    """
+    # Invalidate server session
+    session_id = cookies.get(SESSION_COOKIE_NAME)
+    if session_id:
+        try:
+            with httpx.Client(base_url=API_BASE_URL, verify=VERIFY_SSL, timeout=10.0) as client:
+                client.post(
+                    "/auth/yahoo/session/invalidate",
+                    params={"session_id": session_id},
+                )
+        except Exception as e:
+            logger.warning(f"Failed to invalidate server session: {e}")
+
+        # Clear cookie
+        del cookies[SESSION_COOKIE_NAME]
+        cookies.save()
+
+    # Clear local session state
+    st.session_state.auth_token = None
+    st.session_state.user_id = None
+    st.session_state.leagues = []
+    st.session_state.selected_league = None
+    logger.info("User logged out, session cleared")
 
 
 def get_api_client() -> httpx.Client:
@@ -217,7 +312,7 @@ def render_login_page() -> None:
         st.caption("You'll be redirected to Yahoo to authorize access to your fantasy data.")
 
 
-def render_sidebar() -> None:
+def render_sidebar(cookies: EncryptedCookieManager) -> None:
     """Render the sidebar with league selector and navigation."""
     with st.sidebar:
         st.title("Fantasy Dashboard")
@@ -268,18 +363,13 @@ def render_sidebar() -> None:
 
         # Logout
         if st.button("Logout", use_container_width=True):
-            # Clear session state
-            logger.info("User logging out from dashboard")
-            st.session_state.auth_token = None
-            st.session_state.user_id = None
-            st.session_state.leagues = []
-            st.session_state.selected_league = None
+            clear_session(cookies)
             st.rerun()
 
 
-def render_dashboard() -> None:
+def render_dashboard(cookies: EncryptedCookieManager) -> None:
     """Render the main dashboard content."""
-    render_sidebar()
+    render_sidebar(cookies)
 
     if not st.session_state.selected_league:
         st.title("Yahoo Fantasy Basketball Dashboard")
@@ -336,11 +426,25 @@ def main() -> None:
     """Main application entry point."""
     logger.debug("Dashboard page render started")
     init_session_state()
-    handle_oauth_callback()
+
+    # Initialize cookie manager
+    cookies = get_cookie_manager()
+
+    # Wait for cookies to be ready (required by streamlit-cookies-manager)
+    if not cookies.ready():
+        st.spinner("Loading...")
+        st.stop()
+
+    # Handle OAuth callback (if coming back from login)
+    handle_oauth_callback(cookies)
+
+    # Try to restore session from cookie if not already authenticated
+    if not st.session_state.auth_token:
+        restore_session_from_cookie(cookies)
 
     # Check authentication
     if st.session_state.auth_token:
-        render_dashboard()
+        render_dashboard(cookies)
     else:
         render_login_page()
 
