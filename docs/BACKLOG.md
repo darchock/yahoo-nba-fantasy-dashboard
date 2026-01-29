@@ -123,6 +123,13 @@ Legend: `[ ]` pending | `[x]` done | `[~]` in progress | `[-]` skipped
 ### Remaining - High Priority
 (All high priority items completed)
 
+### Completed (Session 10)
+- [x] Implement browser cookie-based session persistence (survives page refresh)
+- [x] Add lazy refresh caching (6 AM Eastern daily boundary instead of 15-min TTL)
+- [x] Add `UserSession` database model
+- [x] Add session validation/invalidation endpoints
+- [x] Add `is_complete` flag to `CachedData` for historical data
+
 ### Remaining Low Priority - Not a must
 - [ ] Mask OAuth tokens in logs (currently full tokens could appear in error logs)
 - [ ] Add league access validation (verify user can access requested league_key)
@@ -133,7 +140,7 @@ Legend: `[ ]` pending | `[x]` done | `[~]` in progress | `[-]` skipped
 - [ ] Add database connection pool monitoring
 - [ ] Cache periodical aggregation results (currently re-parses cached scoreboards)
 
-- [ ] Move hardcoded values to config (week range 1-19, 15-min cache TTL)
+- [x] Move hardcoded values to config (week range 1-19, 15-min cache TTL) - Cache TTL replaced with lazy refresh
 - [ ] Add session lifecycle logging (creation, refresh, expiration)
 
 ## Phase 6: Deployment and Questions
@@ -143,7 +150,8 @@ Legend: `[ ]` pending | `[x]` done | `[~]` in progress | `[-]` skipped
 - [ ] Where are logs going to be written to?
 - [ ] Are logs even relevant in Streamlit dashboard? Currently there're logs in the format of "Dashboard page rendered" - what is the benefit for it? It seems debug logs and nothing more, need to omit them in Production
 - [ ] Correlation Id should we support in all requests for end-to-end traceability? Or just for error logs?
-- [ ] Why every login needs to involve triggering Yahoo? Why can't we use the cached token already stored in the db for existing users with valid tokens?
+- [x] Why every login needs to involve triggering Yahoo? Why can't we use the cached token already stored in the db for existing users with valid tokens?
+  - **RESOLVED (Session 10):** Implemented browser cookie-based session persistence. Users now stay logged in across page refreshes. Cookie stores session ID, backend validates and returns fresh JWT without re-authenticating with Yahoo.
 
 ### TODO for Deployment
 - [ ] Prepare for Streamlit Cloud deployment

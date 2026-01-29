@@ -843,6 +843,107 @@ None
 
 ---
 
+## Session 10 - 2026-01-29
+
+### Completed
+
+**Architecture Improvements: Auth Persistence & Lazy Refresh Caching**
+
+Implemented two major architectural changes to improve user experience:
+
+**1. Browser Cookie Authentication (Phase B)**
+- Added `UserSession` database model for persistent sessions
+- Added session management functions to `backend/routes/auth.py`:
+  - `create_user_session()` - Creates 30-day session
+  - `validate_session()` - Validates and refreshes session
+  - `invalidate_session()` - Logout single session
+  - `invalidate_all_user_sessions()` - Logout everywhere
+- Added API endpoints:
+  - `POST /auth/session/validate` - Validate session, return JWT + user info
+  - `POST /auth/session/invalidate` - Logout
+- Updated OAuth callback to create session and pass session_id to Streamlit
+- Updated `dashboard/main.py` with cookie handling via `streamlit-cookies-manager`:
+  - On page load: Check cookie → validate with backend → restore session
+  - On OAuth callback: Store session ID in encrypted cookie
+  - On logout: Clear cookie + invalidate server session
+
+**2. Lazy Refresh Caching (Phase A)**
+- Created `app/services/cache_utils.py` with lazy refresh logic:
+  - `get_refresh_boundary()` - Returns current 6 AM Eastern boundary
+  - `should_refresh_cache()` - Check if data needs refresh
+  - `is_week_complete()` - Check if week is historical
+- Added config settings to `app/config.py`:
+  - `CACHE_REFRESH_HOUR` (default: 6)
+  - `CACHE_REFRESH_TIMEZONE` (default: "America/New_York")
+  - `SESSION_EXPIRE_DAYS` (default: 30)
+- Updated `CachedData.is_stale` property to use lazy refresh instead of TTL
+- Added `is_complete` column to `CachedData` model for historical data
+- Updated `backend/routes/api.py`:
+  - Removed `CACHE_DURATION_MINUTES` and TTL-based expiry
+  - Updated `save_cached_data()` to use `is_complete` flag
+  - Updated all endpoints to mark completed weeks as `is_complete=True`
+
+**3. Dependencies Added**
+- `pytz>=2024.1` - Timezone handling for lazy refresh
+- `streamlit-cookies-manager>=0.2.0` - Browser cookie management
+
+**4. Tests Added**
+- `tests/test_cache_utils.py` - Tests for refresh boundary logic, timezone handling
+- `tests/test_session_auth.py` - Tests for session create/validate/invalidate
+
+**5. Documentation Updated**
+- `docs/OAUTH_ARCHITECTURE.md` - Added Session Persistence section
+- `docs/DECISIONS.md` - Added decisions 9 (cookie auth) and 10 (lazy refresh)
+- `docs/PROGRESS.md` - This session
+- `docs/BACKLOG.md` - Marked tasks complete
+
+### Files Created/Modified
+```
+app/
+├── config.py                  # MODIFIED - Added cache/session settings
+├── database/models.py         # MODIFIED - Added UserSession, CachedData.is_complete
+└── services/
+    └── cache_utils.py         # NEW - Lazy refresh caching logic
+
+backend/routes/
+├── auth.py                    # MODIFIED - Session endpoints and functions
+└── api.py                     # MODIFIED - Lazy refresh caching
+
+dashboard/
+└── main.py                    # MODIFIED - Cookie handling
+
+tests/
+├── test_cache_utils.py        # NEW - Cache utils tests
+└── test_session_auth.py       # NEW - Session auth tests
+
+docs/
+├── OAUTH_ARCHITECTURE.md      # MODIFIED - Session persistence docs
+├── DECISIONS.md               # MODIFIED - Decisions 9-10
+├── PROGRESS.md                # MODIFIED - Session 10
+└── BACKLOG.md                 # MODIFIED - Marked complete
+
+pyproject.toml                 # MODIFIED - Added pytz, streamlit-cookies-manager
+requirements.txt               # MODIFIED - Added pytz, streamlit-cookies-manager
+```
+
+### Current State
+- **Phase 1: COMPLETE**
+- **Phase 2: COMPLETE**
+- **Phase 3: IN PROGRESS**
+- **Phase 5: Architecture improvements COMPLETE**
+  - Cookie-based session persistence
+  - Lazy refresh caching at 6 AM Eastern
+  - Ready for deployment
+
+### Blockers
+None
+
+### Next Session
+- Phase 6: Deployment preparation
+- Address deployment questions in BACKLOG.md
+
+---
+
 <!-- Template for new sessions:
 
 ## Session N - YYYY-MM-DD

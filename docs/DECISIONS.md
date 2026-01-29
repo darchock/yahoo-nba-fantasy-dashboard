@@ -191,6 +191,80 @@ FRONTEND_URL=https://your-app.streamlit.app
 
 ---
 
+## Decision 9: Cookie-Based Session Persistence
+
+**Date:** 2026-01-29
+**Status:** Decided
+
+**Context:**
+JWT tokens stored in Streamlit's `st.session_state` are lost on every page refresh, forcing users to re-login each time they refresh the dashboard.
+
+**Decision:**
+Implement browser cookie-based sessions:
+1. Create `UserSession` database model with 30-day expiry
+2. Store encrypted session ID in browser cookie via `streamlit-cookies-manager`
+3. On page load, validate session with backend and restore JWT token
+4. On logout, clear both cookie and server-side session
+
+**Rationale:**
+- Standard web pattern for session persistence
+- Survives page refreshes without re-authentication
+- Secure: session ID is encrypted in cookie, validated server-side
+- Configurable expiry via `SESSION_EXPIRE_DAYS` environment variable
+- `last_activity` timestamp extends active sessions automatically
+
+**Alternatives Considered:**
+- JWT-only: Doesn't survive page refresh in Streamlit
+- LocalStorage: Not accessible from Streamlit Python code
+- Query parameters: Insecure, visible in URL
+
+---
+
+## Decision 10: Lazy Refresh Caching Strategy
+
+**Date:** 2026-01-29
+**Status:** Decided
+
+**Context:**
+The original 15-minute TTL for cached data was too aggressive and didn't match how fantasy data actually changes. Yahoo Fantasy data typically updates overnight, not throughout the day.
+
+**Decision:**
+Implement "lazy refresh at 6 AM Eastern" caching strategy:
+- First request after 6 AM Eastern: Fetch fresh data from Yahoo
+- Subsequent requests same day: Use cached data
+- Completed weeks/matchups: Never re-fetch (cache forever with `is_complete=True`)
+- `refresh=true` parameter still available for manual override
+
+**Implementation:**
+```python
+def should_refresh_cache(fetched_at: datetime) -> bool:
+    """Return True if fetched_at was BEFORE today's 6 AM Eastern."""
+    eastern = pytz.timezone("America/New_York")
+    now_eastern = datetime.now(eastern)
+
+    today_6am = now_eastern.replace(hour=6, minute=0, second=0, microsecond=0)
+    if now_eastern < today_6am:
+        refresh_boundary = today_6am - timedelta(days=1)
+    else:
+        refresh_boundary = today_6am
+
+    return fetched_at.astimezone(eastern) < refresh_boundary
+```
+
+**Rationale:**
+- Matches fantasy data lifecycle (games finish overnight, stats finalize by morning)
+- Simpler logic than TTL-based expiration
+- No wasted API calls for data that hasn't changed
+- 6 AM Eastern chosen because NBA games typically end by 1 AM ET
+- Configurable via `CACHE_REFRESH_HOUR` and `CACHE_REFRESH_TIMEZONE`
+
+**Alternatives Considered:**
+- TTL-based (15 minutes): Too aggressive, wasted API calls
+- Scheduled refresh: More complex, requires background jobs
+- Manual refresh only: Poor UX, stale data
+
+---
+
 <!-- Template for new decisions:
 
 ## Decision N: Title

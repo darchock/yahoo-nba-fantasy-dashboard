@@ -94,12 +94,85 @@ Tokens grant access to ALL of that user's leagues
 
 ---
 
+## Session Persistence (Cookie-Based Auth)
+
+### The Problem
+JWT tokens stored in Streamlit's `st.session_state` are lost on every page refresh, forcing users to re-login.
+
+### Solution
+We use browser cookies to persist session IDs, allowing users to stay logged in across page refreshes.
+
+### Session Flow
+
+```
+User completes OAuth login
+      │
+      ▼
+Backend creates UserSession record (30-day expiry)
+      │
+      ▼
+Session ID passed to Streamlit in redirect URL
+      │
+      ▼
+Streamlit stores session ID in encrypted browser cookie
+      │
+      ▼
+[Page refresh]
+      │
+      ▼
+Streamlit reads cookie, calls POST /auth/session/validate
+      │
+      ▼
+Backend validates session, returns fresh JWT + user info
+      │
+      ▼
+User is logged in without re-authenticating
+```
+
+### Database Model
+
+```python
+class UserSession(Base):
+    __tablename__ = "user_sessions"
+
+    id = Column(Integer, primary_key=True)
+    session_id = Column(String(64), unique=True, index=True)  # Random token
+    user_id = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime)
+    expires_at = Column(DateTime)  # 30-day expiry (configurable)
+    last_activity = Column(DateTime)  # Updated on each validation
+```
+
+### API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/auth/session/validate` | POST | Validate session ID, return user info + JWT |
+| `/auth/session/invalidate` | POST | Logout (delete session) |
+
+### Cookie Configuration
+
+- **Cookie name**: `fantasy_session`
+- **Encryption**: AES-encrypted using `APP_SECRET_KEY`
+- **Lifetime**: Managed by browser (no explicit expiry set)
+- **Scope**: Streamlit dashboard only
+
+### Security Notes
+
+1. Session IDs are cryptographically random (48 bytes, base64 encoded)
+2. Sessions expire after 30 days of inactivity (configurable via `SESSION_EXPIRE_DAYS`)
+3. `last_activity` is updated on each validation, extending active sessions
+4. Logout invalidates the session on both client (cookie) and server (database)
+
+---
+
 ## Security Considerations
 
 1. **Client secret**: Never expose in frontend code or commit to git
 2. **Access tokens**: Short-lived (typically 1 hour), stored encrypted in production
 3. **Refresh tokens**: Long-lived, used to get new access tokens without re-login
 4. **Token storage**: Per-user in database, never shared between users
+5. **Session cookies**: Encrypted, validated on each request
 
 ---
 
