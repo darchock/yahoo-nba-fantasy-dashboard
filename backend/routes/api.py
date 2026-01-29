@@ -2,13 +2,11 @@
 Data API routes for Yahoo Fantasy data.
 
 Returns clean, parsed data with caching support.
+Uses lazy refresh strategy: refresh at 6 AM Eastern daily boundary.
 """
 
-from datetime import datetime, timedelta, timezone
-from typing import Optional, List, Union
-
-# Sentinel value to indicate "use default TTL"
-_USE_DEFAULT_TTL = object()
+from datetime import datetime, timezone
+from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -27,6 +25,7 @@ from app.parsing.scoreboard import (
 )
 from app.parsing.transactions import parse_transactions
 from app.parsing.helpers import extract_team_info, safe_get
+from app.services.cache_utils import is_week_complete
 from app.services.transactions import TransactionService
 from app.services.yahoo_api import (
     YahooAPIService,
@@ -99,9 +98,6 @@ logger = get_logger(__name__)
 
 router = APIRouter()
 
-# Cache duration in minutes
-CACHE_DURATION_MINUTES = 15
-
 # Week bounds for NBA fantasy season
 MIN_WEEK = 1
 MAX_WEEK = 19
@@ -156,46 +152,6 @@ def validate_league_key(league_key: str) -> None:
             status_code=400,
             detail="Invalid league_key format. Expected format: sport.l.league_id (e.g., nba.l.12345 or 418.l.12345)",
         )
-
-
-def is_week_complete(week: int, current_week: int) -> bool:
-    """
-    Determine if a week is complete based on the current week.
-
-    A week is considered complete if it's before the current week.
-    Completed weeks have final data that will never change.
-
-    Args:
-        week: The week to check
-        current_week: The current week from the league
-
-    Returns:
-        True if the week is complete, False otherwise
-    """
-    return week < current_week
-
-
-def calculate_cache_expiry(
-    week: int, current_week: int
-) -> Optional[datetime]:
-    """
-    Calculate the appropriate cache expiry based on week status.
-
-    - Completed weeks (week < current_week): Never expire (returns None)
-    - Current/future weeks: Standard TTL
-
-    Args:
-        week: The week being cached
-        current_week: The current week from the league
-
-    Returns:
-        Expiry datetime, or None for completed weeks
-    """
-    if is_week_complete(week, current_week):
-        logger.debug(f"Week {week} is complete (current={current_week}), caching indefinitely")
-        return None  # Never expires
-    else:
-        return datetime.now(timezone.utc) + timedelta(minutes=CACHE_DURATION_MINUTES)
 
 
 def require_auth(user: Optional[User] = Depends(get_current_user)) -> User:
@@ -269,10 +225,10 @@ def save_cached_data(
     data_type: str,
     data: dict,
     week: Optional[int] = None,
-    expires_at: Union[datetime, None, object] = _USE_DEFAULT_TTL,
+    is_complete: bool = False,
 ) -> CachedData:
     """
-    Save or update cached data with smart expiry.
+    Save or update cached data with lazy refresh strategy.
 
     Args:
         db: Database session
@@ -280,21 +236,12 @@ def save_cached_data(
         data_type: Type of data
         data: Parsed data to cache
         week: Week number (None for season-level data)
-        expires_at: Cache expiry time. Three options:
-            - _USE_DEFAULT_TTL (default): Uses 15-minute TTL
-            - None: Cache never expires (for completed weeks)
-            - datetime: Specific expiry time
+        is_complete: If True, data is for a completed week and never needs refresh
 
     Returns:
         The cached data record
     """
     now = datetime.now(timezone.utc)
-
-    # Determine expiry based on parameter
-    if expires_at is _USE_DEFAULT_TTL:
-        calculated_expires_at: Optional[datetime] = now + timedelta(minutes=CACHE_DURATION_MINUTES)
-    else:
-        calculated_expires_at = expires_at  # type: ignore[assignment]
 
     # Find existing cache entry
     cache = (
@@ -310,7 +257,7 @@ def save_cached_data(
     if cache:
         cache.json_data = data
         cache.fetched_at = now
-        cache.expires_at = calculated_expires_at
+        cache.is_complete = is_complete  # type: ignore[assignment]
     else:
         cache = CachedData(
             league_key=league_key,
@@ -318,7 +265,7 @@ def save_cached_data(
             week=week,
             json_data=data,
             fetched_at=now,
-            expires_at=calculated_expires_at,
+            is_complete=is_complete,
         )
         db.add(cache)
 
@@ -335,27 +282,23 @@ def format_cache_metadata(cache: Optional[CachedData]) -> dict:
         cache: CachedData record or None
 
     Returns:
-        Dictionary with cache info
+        Dictionary with cache info including lazy refresh status
     """
     if not cache:
         return {
             "cached": False,
             "fetched_at": None,
-            "expires_at": None,
+            "is_complete": False,
         }
 
     fetched_at = cache.fetched_at
     if fetched_at and fetched_at.tzinfo is None:
         fetched_at = fetched_at.replace(tzinfo=timezone.utc)
 
-    expires_at = cache.expires_at
-    if expires_at and expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
-
     return {
         "cached": True,
         "fetched_at": fetched_at.isoformat() if fetched_at else None,
-        "expires_at": expires_at.isoformat() if expires_at else None,
+        "is_complete": cache.is_complete or False,
     }
 
 
@@ -480,9 +423,9 @@ async def get_league_info(
         logger.error(f"Failed to fetch league info: league={league_key} user={user_id} error={e}")
         raise handle_yahoo_api_error(e, context="fetching league info")
 
-    # League info rarely changes - cache indefinitely (expires_at=None)
-    cache = save_cached_data(db, league_key, data_type, raw_data, week=None, expires_at=None)
-    logger.debug(f"Cached league_info: league={league_key} cache=indefinite")
+    # League info rarely changes - mark as complete (never needs refresh)
+    cache = save_cached_data(db, league_key, data_type, raw_data, week=None, is_complete=True)
+    logger.debug(f"Cached league_info: league={league_key} cache=complete")
 
     return {
         "data": raw_data,
@@ -523,9 +466,9 @@ async def get_league_teams(
         logger.error(f"Failed to fetch teams: league={league_key} user={user_id} error={e}")
         raise handle_yahoo_api_error(e, context="fetching teams")
 
-    # Teams don't change mid-season - cache indefinitely (expires_at=None)
-    cache = save_cached_data(db, league_key, data_type, raw_data, week=None, expires_at=None)
-    logger.debug(f"Cached league_teams: league={league_key} cache=indefinite")
+    # Teams don't change mid-season - mark as complete (never needs refresh)
+    cache = save_cached_data(db, league_key, data_type, raw_data, week=None, is_complete=True)
+    logger.debug(f"Cached league_teams: league={league_key} cache=complete")
 
     return {
         "data": raw_data,
@@ -576,8 +519,8 @@ async def get_user_team(
             logger.error(f"Failed to fetch teams: league={league_key} user={user_id} error={e}")
             raise handle_yahoo_api_error(e, context="fetching teams for user team lookup")
 
-        # Cache indefinitely (teams don't change mid-season)
-        cache = save_cached_data(db, league_key, data_type, raw_data, week=None, expires_at=None)
+        # Teams don't change mid-season - mark as complete
+        cache = save_cached_data(db, league_key, data_type, raw_data, week=None, is_complete=True)
 
     # Parse teams and find user's team
     teams_raw = safe_get(raw_data, "fantasy_content", "league", 1, "teams", default={})
@@ -665,20 +608,19 @@ async def get_league_standings(
     # Parse the response
     parsed_data = parse_standings(raw_data)
 
-    # Determine cache expiry based on week status
+    # Determine if this is complete data (historical week)
     current_week = parsed_data.get("league", {}).get("current_week")
-    if week is not None and current_week is not None:
-        # Week-specific standings for a completed week can be cached indefinitely
-        expires_at = calculate_cache_expiry(week, current_week)
-    else:
-        # Season totals change constantly during the season
-        expires_at = _USE_DEFAULT_TTL  # type: ignore[assignment]
+    week_is_complete = (
+        week is not None
+        and current_week is not None
+        and is_week_complete(week, current_week)
+    )
 
     # Cache the parsed data
-    cache = save_cached_data(db, league_key, data_type, parsed_data, week, expires_at)
+    cache = save_cached_data(db, league_key, data_type, parsed_data, week, is_complete=week_is_complete)
 
     num_teams = len(parsed_data.get("teams", []))
-    cache_type = "indefinite" if expires_at is None else "timed"
+    cache_type = "complete" if week_is_complete else "lazy-refresh"
     logger.debug(f"Cached standings: league={league_key} week={week} teams={num_teams} cache={cache_type}")
 
     return {
@@ -747,19 +689,19 @@ async def get_league_scoreboard(
     # Use the week from parsed data if not specified
     actual_week = week if week is not None else parsed_data.get("week")
 
-    # Determine cache expiry based on week status
+    # Determine if this is complete data (historical week)
     current_week = parsed_data.get("league", {}).get("current_week")
-    if actual_week is not None and current_week is not None:
-        expires_at = calculate_cache_expiry(actual_week, current_week)
-    else:
-        # Fallback to default TTL if we can't determine week status
-        expires_at = _USE_DEFAULT_TTL  # type: ignore[assignment]
+    week_is_complete = (
+        actual_week is not None
+        and current_week is not None
+        and is_week_complete(actual_week, current_week)
+    )
 
     # Cache the parsed data
-    cache = save_cached_data(db, league_key, data_type, parsed_data, actual_week, expires_at)
+    cache = save_cached_data(db, league_key, data_type, parsed_data, actual_week, is_complete=week_is_complete)
 
     num_matchups = len(parsed_data.get("matchups", []))
-    cache_type = "indefinite" if expires_at is None else "timed"
+    cache_type = "complete" if week_is_complete else "lazy-refresh"
     logger.debug(f"Cached scoreboard: league={league_key} week={actual_week} matchups={num_matchups} cache={cache_type}")
 
     return {
@@ -1025,7 +967,7 @@ async def get_league_transactions(
     transaction_type: Optional[str] = None,
     limit: int = 50,
     offset: int = 0,
-    sync: bool = False,
+    refresh: bool = False,
     db: Session = Depends(get_db),
     yahoo_service: YahooAPIService = Depends(get_yahoo_service),
     user: User = Depends(require_auth),
@@ -1033,7 +975,7 @@ async def get_league_transactions(
     """
     Get league transactions from database.
 
-    If sync=True or no transactions exist, fetch from Yahoo API first.
+    Uses lazy refresh strategy: syncs from Yahoo if last sync was before 6 AM Eastern.
 
     Args:
         league_key: Yahoo league key
@@ -1041,14 +983,14 @@ async def get_league_transactions(
         transaction_type: Filter by type (add, drop, trade, add/drop)
         limit: Maximum number of results (default 50)
         offset: Number of results to skip
-        sync: If true, fetch new transactions from Yahoo first
+        refresh: Force refresh from Yahoo, ignoring lazy refresh
     """
     user_id = user.id
     txn_service = TransactionService(db)
 
-    # Check if we need to sync
+    # Check if we need to sync using lazy refresh strategy
     total_count = txn_service.get_transaction_count(league_key)
-    should_sync = sync or total_count == 0
+    should_sync = refresh or total_count == 0 or txn_service.should_sync_transactions(league_key)
 
     new_count = 0
     if should_sync:
@@ -1111,7 +1053,7 @@ async def get_league_transactions(
     total_count = txn_service.get_transaction_count(league_key)
 
     # Get sync metadata for the response
-    sync_meta = txn_service.get_sync_metadata(user_id, league_key)
+    sync_meta = txn_service.get_sync_metadata(league_key)
 
     return {
         "transactions": result,
@@ -1121,109 +1063,6 @@ async def get_league_transactions(
         "synced": should_sync,
         "new_transactions": new_count if should_sync else 0,
         "last_sync_at": sync_meta.get("last_sync_at"),
-        "cooldown_active": sync_meta.get("cooldown_active", False),
-        "cooldown_remaining_minutes": sync_meta.get("cooldown_remaining_minutes"),
-    }
-
-
-@router.get("/league/{league_key}/transactions/sync")
-async def sync_transactions(
-    league_key: str,
-    force: bool = False,
-    db: Session = Depends(get_db),
-    yahoo_service: YahooAPIService = Depends(get_yahoo_service),
-    user: User = Depends(require_auth),
-) -> dict:
-    """
-    Fetch new transactions from Yahoo and store in database.
-
-    Respects a 2-hour cooldown between syncs unless force=True.
-
-    Returns count of new transactions added.
-
-    Args:
-        league_key: Yahoo league key
-        force: If True, bypass cooldown and sync anyway
-    """
-    user_id = user.id
-    txn_service = TransactionService(db)
-
-    # Check cooldown (unless force is True)
-    if not force:
-        on_cooldown, remaining = txn_service.is_sync_on_cooldown(user_id, league_key)
-        if on_cooldown:
-            logger.info(
-                f"Transaction sync skipped (cooldown): league={league_key} "
-                f"user={user_id} remaining={remaining}min"
-            )
-            sync_meta = txn_service.get_sync_metadata(user_id, league_key)
-            total_count = txn_service.get_transaction_count(league_key)
-            return {
-                "success": True,
-                "new_transactions": 0,
-                "total_transactions": total_count,
-                "skipped": True,
-                "cooldown_active": True,
-                "cooldown_remaining_minutes": remaining,
-                "last_sync_at": sync_meta.get("last_sync_at"),
-            }
-
-    logger.info(f"Transaction sync requested: league={league_key} user={user_id} force={force}")
-
-    try:
-        raw_data = await yahoo_service.get_league_transactions(league_key)
-        parsed = parse_transactions(raw_data)
-
-        new_count = txn_service.store_transactions(league_key, parsed)
-        total_count = txn_service.get_transaction_count(league_key)
-
-        # Update last sync time
-        txn_service.update_last_sync_time(user_id, league_key)
-        sync_meta = txn_service.get_sync_metadata(user_id, league_key)
-
-        logger.info(f"Transaction sync complete: league={league_key} new={new_count} total={total_count}")
-
-        return {
-            "success": True,
-            "new_transactions": new_count,
-            "total_transactions": total_count,
-            "skipped": False,
-            "cooldown_active": False,
-            "cooldown_remaining_minutes": None,
-            "last_sync_at": sync_meta.get("last_sync_at"),
-        }
-    except Exception as e:
-        logger.error(f"Failed to sync transactions: league={league_key} error={e}")
-        raise handle_yahoo_api_error(e, context="syncing transactions")
-
-
-@router.get("/league/{league_key}/transactions/sync-status")
-async def get_transaction_sync_status(
-    league_key: str,
-    db: Session = Depends(get_db),
-    user: User = Depends(require_auth),
-) -> dict:
-    """
-    Get transaction sync status and metadata.
-
-    Returns cooldown status, last sync time, and whether auto-sync should happen.
-    """
-    user_id = user.id
-    txn_service = TransactionService(db)
-
-    sync_meta = txn_service.get_sync_metadata(user_id, league_key)
-    total_count = txn_service.get_transaction_count(league_key)
-
-    # Determine if auto-sync should happen (no transactions OR cooldown expired)
-    should_auto_sync = total_count == 0 or not sync_meta.get("cooldown_active", False)
-
-    return {
-        "total_transactions": total_count,
-        "last_sync_at": sync_meta.get("last_sync_at"),
-        "last_sync_ago_minutes": sync_meta.get("last_sync_ago_minutes"),
-        "cooldown_active": sync_meta.get("cooldown_active", False),
-        "cooldown_remaining_minutes": sync_meta.get("cooldown_remaining_minutes"),
-        "should_auto_sync": should_auto_sync,
     }
 
 
