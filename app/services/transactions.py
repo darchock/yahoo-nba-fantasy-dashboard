@@ -5,7 +5,7 @@ Handles:
 - Storing new transactions (with deduplication)
 - Querying transactions with filters
 - Computing transaction statistics
-- Sync metadata tracking (cooldown management)
+- Sync metadata tracking (lazy refresh at 6 AM boundary)
 """
 
 from datetime import datetime, timezone
@@ -16,11 +16,9 @@ from sqlalchemy.orm import Session
 
 from app.database.models import Transaction, TransactionPlayer, UserLeague
 from app.logging_config import get_logger
+from app.services.cache_utils import should_refresh_cache
 
 logger = get_logger(__name__)
-
-# Default cooldown for transaction sync (in minutes)
-TRANSACTION_SYNC_COOLDOWN_MINUTES = 120  # 2 hours
 
 
 class TransactionService:
@@ -469,84 +467,50 @@ class TransactionService:
         )
         return True
 
-    def is_sync_on_cooldown(
-        self,
-        user_id: int,
-        league_key: str,
-        cooldown_minutes: int = TRANSACTION_SYNC_COOLDOWN_MINUTES,
-    ) -> tuple[bool, Optional[int]]:
+    def should_sync_transactions(self, league_key: str) -> bool:
         """
-        Check if transaction sync is on cooldown for this league.
+        Check if transactions should be synced (using lazy refresh strategy).
 
-        NOTE: This checks across ALL users in the league, not just the current user.
-        Transaction data is shared across all users in a league, so if anyone
-        has synced recently, no one else needs to sync again.
+        Uses the same 6 AM Eastern boundary as other cached data.
+        If last sync was before today's 6 AM, transactions should be synced.
 
         Args:
-            user_id: User ID (kept for API compatibility, but not used for cooldown check)
             league_key: Yahoo league key
-            cooldown_minutes: Cooldown period in minutes
 
         Returns:
-            Tuple of (is_on_cooldown, minutes_remaining)
-            - (True, N) if on cooldown with N minutes remaining
-            - (False, None) if not on cooldown (sync allowed)
+            True if sync should happen, False if data is fresh enough
         """
         # Check league-level sync time (most recent across ALL users)
         last_sync = self.get_league_last_sync_time(league_key)
 
         if last_sync is None:
-            return False, None
+            # Never synced - should sync
+            return True
 
-        now = datetime.now(timezone.utc)
-        elapsed = now - last_sync
-        elapsed_minutes = elapsed.total_seconds() / 60
+        # Use lazy refresh boundary (6 AM Eastern)
+        return should_refresh_cache(last_sync)
 
-        if elapsed_minutes < cooldown_minutes:
-            remaining = int(cooldown_minutes - elapsed_minutes)
-            logger.debug(
-                f"Sync on cooldown: league={league_key} "
-                f"elapsed={elapsed_minutes:.1f}m remaining={remaining}m"
-            )
-            return True, remaining
-
-        return False, None
-
-    def get_sync_metadata(
-        self, user_id: int, league_key: str
-    ) -> Dict[str, Any]:
+    def get_sync_metadata(self, league_key: str) -> Dict[str, Any]:
         """
         Get sync metadata for display in UI.
 
         Args:
-            user_id: User ID
             league_key: Yahoo league key
 
         Returns:
             Dictionary with sync metadata:
-            - last_sync_at: ISO timestamp of league-level last sync (for cooldown)
-            - last_sync_ago_minutes: Minutes since league-level last sync
-            - cooldown_active: Whether cooldown is active (league-level)
-            - cooldown_remaining_minutes: Minutes until sync allowed
-            - user_last_sync_at: ISO timestamp of this user's last sync (for display)
+            - last_sync_at: ISO timestamp of last sync
+            - last_sync_ago_minutes: Minutes since last sync
+            - should_sync: Whether sync should happen (using lazy refresh)
         """
-        # Get league-level sync time (for cooldown calculation)
+        # Get league-level sync time
         league_last_sync = self.get_league_last_sync_time(league_key)
 
-        # Also get user's personal sync time (for display)
-        user_last_sync = self.get_last_sync_time(user_id, league_key)
-
-        # Check cooldown based on league-level sync
-        on_cooldown, remaining = self.is_sync_on_cooldown(user_id, league_key)
-
-        # Use league-level sync for display (since that's what matters for cooldown)
         if league_last_sync is None:
             return {
                 "last_sync_at": None,
                 "last_sync_ago_minutes": None,
-                "cooldown_active": False,
-                "cooldown_remaining_minutes": None,
-                "user_last_sync_at": user_last_sync.isoformat() if user_last_sync else None,
+                "should_sync": True,
             }
 
         now = datetime.now(timezone.utc)
@@ -556,7 +520,5 @@ class TransactionService:
         return {
             "last_sync_at": league_last_sync.isoformat(),
             "last_sync_ago_minutes": elapsed_minutes,
-            "cooldown_active": on_cooldown,
-            "cooldown_remaining_minutes": remaining,
-            "user_last_sync_at": user_last_sync.isoformat() if user_last_sync else None,
+            "should_sync": self.should_sync_transactions(league_key),
         }

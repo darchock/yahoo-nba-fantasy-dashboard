@@ -4,7 +4,7 @@ Tests for the transactions feature.
 Tests cover:
 - Transaction parsing
 - Transaction service (storage and queries)
-- Sync tracking (cooldown management)
+- Sync tracking (lazy refresh using 6 AM boundary)
 """
 
 import pytest
@@ -16,10 +16,7 @@ from app.parsing.transactions import (
     parse_transactions,
     get_transaction_summary,
 )
-from app.services.transactions import (
-    TransactionService,
-    TRANSACTION_SYNC_COOLDOWN_MINUTES,
-)
+from app.services.transactions import TransactionService
 from app.database.models import Transaction, TransactionPlayer, UserLeague, User
 
 
@@ -691,61 +688,49 @@ class TestSyncTracking:
 
         assert result is False
 
-    def test_is_sync_on_cooldown_never_synced(self, db_session, test_user, test_user_league):
-        """Test cooldown check when never synced."""
+    def test_should_sync_transactions_never_synced(self, db_session, test_user, test_user_league):
+        """Test sync check when never synced - should always sync."""
         service = TransactionService(db_session)
 
-        on_cooldown, remaining = service.is_sync_on_cooldown(
-            test_user.id, test_user_league.league_key
-        )
+        should_sync = service.should_sync_transactions(test_user_league.league_key)
 
-        assert on_cooldown is False
-        assert remaining is None
+        assert should_sync is True
 
-    def test_is_sync_on_cooldown_recently_synced(self, db_session, test_user, test_user_league):
-        """Test cooldown check when recently synced."""
+    def test_should_sync_transactions_recently_synced(self, db_session, test_user, test_user_league):
+        """Test sync check when recently synced - should not sync."""
         service = TransactionService(db_session)
 
         # Set sync time to now
         service.update_last_sync_time(test_user.id, test_user_league.league_key)
 
-        on_cooldown, remaining = service.is_sync_on_cooldown(
-            test_user.id, test_user_league.league_key
-        )
+        should_sync = service.should_sync_transactions(test_user_league.league_key)
 
-        assert on_cooldown is True
-        assert remaining is not None
-        assert remaining > 0
-        assert remaining <= TRANSACTION_SYNC_COOLDOWN_MINUTES
+        # Should not sync because sync was after 6 AM today (or just now)
+        assert should_sync is False
 
-    def test_is_sync_on_cooldown_expired(self, db_session, test_user, test_user_league):
-        """Test cooldown check when cooldown has expired."""
+    def test_should_sync_transactions_old_sync(self, db_session, test_user, test_user_league):
+        """Test sync check when sync was more than a day ago."""
         service = TransactionService(db_session)
 
-        # Set sync time to past (beyond cooldown)
-        past_time = datetime.now(timezone.utc) - timedelta(
-            minutes=TRANSACTION_SYNC_COOLDOWN_MINUTES + 10
-        )
+        # Set sync time to 2 days ago
+        past_time = datetime.now(timezone.utc) - timedelta(days=2)
         test_user_league.last_transaction_sync_at = past_time
         db_session.commit()
 
-        on_cooldown, remaining = service.is_sync_on_cooldown(
-            test_user.id, test_user_league.league_key
-        )
+        should_sync = service.should_sync_transactions(test_user_league.league_key)
 
-        assert on_cooldown is False
-        assert remaining is None
+        # Should sync because last sync was before today's 6 AM boundary
+        assert should_sync is True
 
     def test_get_sync_metadata_never_synced(self, db_session, test_user, test_user_league):
         """Test getting sync metadata when never synced."""
         service = TransactionService(db_session)
 
-        metadata = service.get_sync_metadata(test_user.id, test_user_league.league_key)
+        metadata = service.get_sync_metadata(test_user_league.league_key)
 
         assert metadata["last_sync_at"] is None
         assert metadata["last_sync_ago_minutes"] is None
-        assert metadata["cooldown_active"] is False
-        assert metadata["cooldown_remaining_minutes"] is None
+        assert metadata["should_sync"] is True
 
     def test_get_sync_metadata_recently_synced(self, db_session, test_user, test_user_league):
         """Test getting sync metadata when recently synced."""
@@ -756,12 +741,11 @@ class TestSyncTracking:
         test_user_league.last_transaction_sync_at = past_time
         db_session.commit()
 
-        metadata = service.get_sync_metadata(test_user.id, test_user_league.league_key)
+        metadata = service.get_sync_metadata(test_user_league.league_key)
 
         assert metadata["last_sync_at"] is not None
         assert metadata["last_sync_ago_minutes"] is not None
         assert metadata["last_sync_ago_minutes"] >= 29  # Allow for slight timing differences
         assert metadata["last_sync_ago_minutes"] <= 31
-        assert metadata["cooldown_active"] is True
-        assert metadata["cooldown_remaining_minutes"] is not None
-        assert metadata["cooldown_remaining_minutes"] > 0
+        # should_sync depends on whether we're before/after 6 AM - just verify it's boolean
+        assert isinstance(metadata["should_sync"], bool)
