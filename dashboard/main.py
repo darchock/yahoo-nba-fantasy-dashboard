@@ -324,7 +324,13 @@ def render_sidebar(cookies: EncryptedCookieManager) -> None:
 
         # Load leagues if not cached
         if not st.session_state.leagues:
-            st.session_state.leagues = fetch_leagues()
+            # First try without sync (fast, from database)
+            st.session_state.leagues = fetch_leagues(sync=False)
+
+            # If no leagues found, sync from Yahoo (first login)
+            if not st.session_state.leagues:
+                with st.spinner("Fetching leagues from Yahoo..."):
+                    st.session_state.leagues = fetch_leagues(sync=True)
 
         leagues = st.session_state.leagues
 
@@ -343,7 +349,7 @@ def render_sidebar(cookies: EncryptedCookieManager) -> None:
             if selected_name:
                 st.session_state.selected_league = league_options[selected_name]
         else:
-            st.info("No leagues found. Click sync to fetch from Yahoo.")
+            st.warning("No NBA fantasy leagues found for your Yahoo account.")
 
         st.divider()
 

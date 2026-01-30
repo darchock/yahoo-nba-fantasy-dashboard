@@ -64,38 +64,13 @@ class CorrelationIdMiddleware(BaseHTTPMiddleware):
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan handler - runs on startup and shutdown."""
-    from sqlalchemy import inspect, text
-
     # Silence noisy loggers (after uvicorn has configured them)
     silence_noisy_loggers()
 
     # Startup: Create database tables
-    print(f"[STARTUP] Starting Yahoo Fantasy Dashboard API", flush=True)
-    print(f"[STARTUP] DATABASE_URL: {settings.DATABASE_URL[:50]}...", flush=True)
     logger.info("Starting Yahoo Fantasy Dashboard API")
-
-    # Test database connection first
-    try:
-        with engine.connect() as conn:
-            result = conn.execute(text("SELECT 1"))
-            print(f"[STARTUP] Database connection test: OK", flush=True)
-    except Exception as e:
-        print(f"[STARTUP] Database connection FAILED: {e}", flush=True)
-        raise
-
-    try:
-        Base.metadata.create_all(bind=engine)
-        print(f"[STARTUP] create_all() completed", flush=True)
-
-        # Verify tables were created
-        inspector = inspect(engine)
-        tables = inspector.get_table_names()
-        print(f"[STARTUP] Tables in database: {tables}", flush=True)
-        logger.info(f"Database tables initialized: {tables}")
-    except Exception as e:
-        print(f"[STARTUP] ERROR creating tables: {e}", flush=True)
-        logger.error(f"Failed to create database tables: {e}")
-        raise
+    Base.metadata.create_all(bind=engine)
+    logger.info("Database tables initialized")
     yield
     # Shutdown: cleanup if needed
     logger.info("Shutting down Yahoo Fantasy Dashboard API")
