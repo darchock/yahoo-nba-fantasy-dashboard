@@ -68,9 +68,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     silence_noisy_loggers()
 
     # Startup: Create database tables
+    print(f"[STARTUP] Starting Yahoo Fantasy Dashboard API", flush=True)
+    print(f"[STARTUP] DATABASE_URL: {settings.DATABASE_URL[:50]}...", flush=True)
     logger.info("Starting Yahoo Fantasy Dashboard API")
-    Base.metadata.create_all(bind=engine)
-    logger.info("Database tables initialized")
+    try:
+        Base.metadata.create_all(bind=engine)
+        print(f"[STARTUP] Database tables created successfully", flush=True)
+        logger.info("Database tables initialized")
+    except Exception as e:
+        print(f"[STARTUP] ERROR creating tables: {e}", flush=True)
+        logger.error(f"Failed to create database tables: {e}")
+        raise
     yield
     # Shutdown: cleanup if needed
     logger.info("Shutting down Yahoo Fantasy Dashboard API")
