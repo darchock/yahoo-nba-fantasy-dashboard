@@ -8,7 +8,7 @@ from typing import Optional
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, HTMLResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
@@ -268,12 +268,16 @@ def get_current_user(
 
 
 @router.get("/login")
-async def login(request: Request) -> RedirectResponse:
+async def login(request: Request, redirect_method: str = "js") -> HTMLResponse | RedirectResponse:
     """
     Initiate Yahoo OAuth login flow.
 
     Generates a state token for CSRF protection, stores it in session,
     and redirects user to Yahoo authorization page.
+
+    Args:
+        redirect_method: "js" for JavaScript redirect (better mobile compatibility),
+                        "http" for standard HTTP redirect
     """
     # Generate CSRF state token
     state = secrets.token_urlsafe(32)
@@ -282,8 +286,69 @@ async def login(request: Request) -> RedirectResponse:
     # Generate authorization URL
     auth_url = YahooAPIService.get_authorization_url(state=state)
 
-    logger.info("Initiating OAuth login flow")
-    return RedirectResponse(url=auth_url)
+    logger.info(f"Initiating OAuth login flow (method={redirect_method})")
+
+    if redirect_method == "http":
+        return RedirectResponse(url=auth_url)
+
+    # JavaScript redirect - helps bypass Yahoo's mobile bot detection
+    # by making the redirect appear as a user-initiated navigation
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Redirecting to Yahoo...</title>
+        <style>
+            body {{
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                height: 100vh;
+                margin: 0;
+                background: #f5f5f5;
+            }}
+            .container {{
+                text-align: center;
+                padding: 20px;
+            }}
+            .spinner {{
+                border: 3px solid #f3f3f3;
+                border-top: 3px solid #6001d2;
+                border-radius: 50%;
+                width: 40px;
+                height: 40px;
+                animation: spin 1s linear infinite;
+                margin: 0 auto 20px;
+            }}
+            @keyframes spin {{
+                0% {{ transform: rotate(0deg); }}
+                100% {{ transform: rotate(360deg); }}
+            }}
+            a {{
+                color: #6001d2;
+                text-decoration: none;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="spinner"></div>
+            <p>Redirecting to Yahoo login...</p>
+            <p><small>If not redirected, <a href="{auth_url}" id="manual-link">click here</a></small></p>
+        </div>
+        <script>
+            // Small delay then redirect - helps with mobile browser compatibility
+            setTimeout(function() {{
+                window.location.href = "{auth_url}";
+            }}, 100);
+        </script>
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content)
 
 
 @router.get("/callback")
