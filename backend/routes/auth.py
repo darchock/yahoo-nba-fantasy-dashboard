@@ -267,8 +267,8 @@ def get_current_user(
     return user
 
 
-@router.get("/login")
-async def login(request: Request, redirect_method: str = "js") -> HTMLResponse | RedirectResponse:
+@router.get("/login", response_model=None)
+async def login(request: Request, redirect_method: str = "js"):
     """
     Initiate Yahoo OAuth login flow.
 
