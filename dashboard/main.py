@@ -504,14 +504,11 @@ def render_sidebar(cookies: EncryptedCookieManager) -> None:
         # Link Device (QR Code)
         st.subheader("Link Device")
         if st.button("Generate QR Code", use_container_width=True, help="Scan with another device to login"):
-            with st.spinner("Generating QR code..."):
-                qr_data = generate_device_link_code()
-                if qr_data:
-                    st.session_state.qr_code_data = qr_data
-                    st.session_state.show_qr_dialog = True
-                    st.rerun()
-                else:
-                    st.error("Failed to generate QR code. Please try again.")
+            qr_data = generate_device_link_code()
+            if qr_data:
+                show_qr_code_dialog(qr_data, is_first_login=False)
+            else:
+                st.error("Failed to generate QR code. Please try again.")
 
         st.divider()
 
@@ -521,74 +518,48 @@ def render_sidebar(cookies: EncryptedCookieManager) -> None:
             st.rerun()
 
 
-def render_qr_code_dialog() -> None:
-    """Render the QR code dialog/popup for device linking."""
-    if not st.session_state.show_qr_dialog:
-        return
+@st.dialog("Link Another Device")
+def show_qr_code_dialog(qr_data: dict, is_first_login: bool = False) -> None:
+    """
+    Display QR code in a modal dialog.
 
-    # Generate QR code data if not already generated
-    if not st.session_state.qr_code_data:
-        qr_data = generate_device_link_code()
-        if qr_data:
-            st.session_state.qr_code_data = qr_data
-        else:
-            st.session_state.show_qr_dialog = False
-            return
+    Uses Streamlit's @st.dialog decorator for a proper popup with X button.
+    """
+    if is_first_login:
+        st.info(
+            "**Welcome!** Scan this QR code with your phone to login "
+            "on mobile without needing to go through Yahoo login again."
+        )
+    else:
+        st.markdown("Scan this QR code with another device to login instantly.")
 
-    qr_data = st.session_state.qr_code_data
+    # Generate and display QR code
+    qr_image_base64 = generate_qr_code_image(qr_data["link_url"])
+    st.markdown(
+        f'<div style="display: flex; justify-content: center; padding: 20px 0;">'
+        f'<img src="data:image/png;base64,{qr_image_base64}" width="250" />'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
 
-    # Use Streamlit's dialog/modal (using a container with styling)
-    with st.container():
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            st.markdown("---")
-            st.markdown("### Link Another Device")
-
-            if st.session_state.is_first_login:
-                st.info(
-                    "**Welcome!** Scan this QR code with your phone to login "
-                    "on mobile without needing to go through Yahoo login again."
-                )
-            else:
-                st.info(
-                    "Scan this QR code with another device to login instantly."
-                )
-
-            # Generate and display QR code
-            qr_image_base64 = generate_qr_code_image(qr_data["link_url"])
-            st.markdown(
-                f'<div style="display: flex; justify-content: center;">'
-                f'<img src="data:image/png;base64,{qr_image_base64}" width="250" />'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-
-            # Show expiration info
-            expires_in = qr_data.get("expires_in_seconds", 180)
-            st.caption(f"Code expires in {expires_in // 60} minutes")
-
-            # Close button
-            col_a, col_b, col_c = st.columns([1, 1, 1])
-            with col_b:
-                if st.button("Close", use_container_width=True, key="close_qr_dialog"):
-                    st.session_state.show_qr_dialog = False
-                    st.session_state.is_first_login = False
-                    st.session_state.qr_code_data = None
-                    st.rerun()
-
-            # Generate new code button
-            with col_b:
-                if st.button("Generate New Code", use_container_width=True, key="new_qr_code"):
-                    st.session_state.qr_code_data = None
-                    st.rerun()
-
-            st.markdown("---")
+    # Show expiration info
+    expires_in = qr_data.get("expires_in_seconds", 180)
+    st.caption(f"Code expires in {expires_in // 60} minutes. Close this dialog when done scanning.")
 
 
 def render_dashboard(cookies: EncryptedCookieManager) -> None:
     """Render the main dashboard content."""
-    # Show QR code dialog if active
-    render_qr_code_dialog()
+    # Show QR code dialog for first login
+    if st.session_state.show_qr_dialog and st.session_state.is_first_login:
+        qr_data = st.session_state.qr_code_data
+        if not qr_data:
+            qr_data = generate_device_link_code()
+            st.session_state.qr_code_data = qr_data
+        if qr_data:
+            show_qr_code_dialog(qr_data, is_first_login=True)
+        # Reset the flag after showing
+        st.session_state.show_qr_dialog = False
+        st.session_state.is_first_login = False
 
     render_sidebar(cookies)
 
