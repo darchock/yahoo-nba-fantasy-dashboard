@@ -182,6 +182,11 @@ def render_league_overview(
         # Show detailed stats table
         st.divider()
         st.subheader("Season Stats by Team")
+        st.caption(
+            "All season longs totals for each of the statistical categories. "
+            "Along with the record and win percentage for each team. "
+            "The standings table is updated weekly. "
+        )
 
         # Build dataframe with all stats
         rows = []

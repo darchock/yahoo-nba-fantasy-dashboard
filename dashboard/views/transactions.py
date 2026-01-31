@@ -76,6 +76,8 @@ def render_manager_activity_tab(
         st.info("No transaction activity found.")
         return
 
+    st.caption("Showing transaction activity (adds, drops, trades) per team.")
+
     # Build table
     rows = []
     for entry in manager_activity:
@@ -127,6 +129,8 @@ def render_most_added_tab(
         st.info("No player add data found.")
         return
 
+    st.caption("Players most frequently added across all teams.")
+
     rows = []
     for entry in most_added:
         rows.append({
@@ -157,6 +161,8 @@ def render_most_dropped_tab(
     if not most_dropped:
         st.info("No player drop data found.")
         return
+
+    st.caption("Players most frequently dropped across all teams.")
 
     rows = []
     for entry in most_dropped:
@@ -246,6 +252,8 @@ def render_recent_transactions_tab(
         league_key: Yahoo league key
         verify_ssl: Whether to verify SSL certificates
     """
+    st.caption("Showing recent transactions across all teams. Gets updated daily at 6 AM Eastern.")
+    
     result = fetch_api_data(
         api_base_url=api_base_url,
         auth_token=auth_token,

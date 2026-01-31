@@ -267,6 +267,12 @@ def render_totals_tab(
         values = []
         for team in teams:
             val = team.get(stat)
+            # Convert to float if it's a numeric string
+            if isinstance(val, str):
+                try:
+                    val = float(val)
+                except (ValueError, TypeError):
+                    val = None
             if isinstance(val, (int, float)):
                 values.append(val)
         if values:
@@ -287,7 +293,7 @@ def render_totals_tab(
     # Style the League Avg row differently
     def highlight_avg_row(row):
         if row["Team"] == "League Avg":
-            return ["font-style: italic; background-color: #1a1a2e"] * len(row)
+            return ["font-style: italic; background-color: rgba(150, 150, 150, 0.2)"] * len(row)
         return [""] * len(row)
 
     styled_df = df.style.apply(highlight_avg_row, axis=1)
