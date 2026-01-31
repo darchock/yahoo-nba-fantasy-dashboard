@@ -46,26 +46,18 @@ def format_time_ago(iso_timestamp: str) -> str:
         return "Unknown"
 
 
-def render_cache_indicator(cache_info: dict, on_refresh: callable) -> None:
+def render_cache_indicator(cache_info: dict) -> None:
     """
-    Render the cache freshness indicator with refresh button.
+    Render the cache freshness indicator.
 
     Args:
         cache_info: Cache metadata from API response
-        on_refresh: Callback function when refresh is clicked
     """
-    col1, col2 = st.columns([4, 1])
-
-    with col1:
-        if cache_info.get("cached"):
-            time_ago = format_time_ago(cache_info.get("fetched_at"))
-            st.caption(f"Last updated: {time_ago}")
-        else:
-            st.caption("Freshly fetched")
-
-    with col2:
-        if st.button("Refresh", key="refresh_standings", help="Fetch fresh data from Yahoo"):
-            on_refresh()
+    if cache_info.get("cached"):
+        time_ago = format_time_ago(cache_info.get("fetched_at"))
+        st.caption(f"Last updated: {time_ago}")
+    else:
+        st.caption("Freshly fetched")
 
 
 def render_league_overview(
@@ -83,19 +75,13 @@ def render_league_overview(
         league_key: Yahoo league key
         verify_ssl: Whether to verify SSL certificates
     """
-    # Check for refresh request
-    refresh = st.session_state.get("force_refresh_standings", False)
-    if refresh:
-        st.session_state.force_refresh_standings = False
-
     # Fetch standings data from API
     response_data = None
     try:
         headers = {"Authorization": f"Bearer {auth_token}"}
-        params = {"refresh": "true"} if refresh else {}
 
         with httpx.Client(base_url=api_base_url, headers=headers, verify=verify_ssl, timeout=30.0) as client:
-            response = client.get(f"/api/league/{league_key}/standings", params=params)
+            response = client.get(f"/api/league/{league_key}/standings")
             if response.status_code == 200:
                 response_data = response.json()
             elif response.status_code == 401:
@@ -117,12 +103,8 @@ def render_league_overview(
     # League header
     st.title(f"{league_info.get('name', 'League Overview')}")
 
-    # Cache indicator with refresh
-    def trigger_refresh():
-        st.session_state.force_refresh_standings = True
-        st.rerun()
-
-    render_cache_indicator(cache_info, trigger_refresh)
+    # Cache indicator
+    render_cache_indicator(cache_info)
 
     # League stats row
     col1, col2, col3, col4 = st.columns(4)

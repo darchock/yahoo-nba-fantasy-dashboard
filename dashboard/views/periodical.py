@@ -12,6 +12,10 @@ import pandas as pd
 # Stat categories in display order
 STAT_CATEGORIES = ["FG%", "FT%", "3PTM", "PTS", "REB", "AST", "STL", "BLK", "TO"]
 
+# Dark-mode friendly highlight colors (muted/pastel)
+COLOR_WIN = "#2d5a3d"  # Muted forest green
+COLOR_LOSE = "#5a2d2d"  # Muted burgundy
+
 
 def fetch_api_data(
     api_base_url: str,
@@ -157,12 +161,12 @@ def render_periodical_rankings_tab(
 
     df = pd.DataFrame(rows)
 
-    # Style: highlight rank 1 in green, last rank in red
+    # Style: highlight rank 1 in green, last rank in red (dark-mode friendly)
     def highlight_ranks(val):
         if val == 1:
-            return "background-color: #d4edda; font-weight: bold"
+            return f"background-color: {COLOR_WIN}; font-weight: bold"
         elif val == num_teams:
-            return "background-color: #f8d7da"
+            return f"background-color: {COLOR_LOSE}"
         return ""
 
     styled_df = df.style.applymap(highlight_ranks, subset=stat_categories)
