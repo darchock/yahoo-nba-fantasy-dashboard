@@ -5,9 +5,12 @@ Run with: streamlit run dashboard/main.py
 """
 
 import os
+import io
+import base64
 
 import streamlit as st
 import httpx
+import qrcode
 from typing import Optional
 from dotenv import load_dotenv
 from streamlit_cookies_manager import EncryptedCookieManager
@@ -66,6 +69,119 @@ def init_session_state() -> None:
         st.session_state.current_page = "Home"
     if "leagues" not in st.session_state:
         st.session_state.leagues = []
+    if "is_first_login" not in st.session_state:
+        st.session_state.is_first_login = False
+    if "show_qr_dialog" not in st.session_state:
+        st.session_state.show_qr_dialog = False
+    if "qr_code_data" not in st.session_state:
+        st.session_state.qr_code_data = None
+
+
+def generate_qr_code_image(url: str) -> str:
+    """
+    Generate a QR code image for the given URL.
+
+    Returns:
+        Base64 encoded PNG image data
+    """
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=10,
+        border=4,
+    )
+    qr.add_data(url)
+    qr.make(fit=True)
+
+    img = qr.make_image(fill_color="black", back_color="white")
+
+    # Convert to base64
+    buffer = io.BytesIO()
+    img.save(buffer, format="PNG")
+    buffer.seek(0)
+    img_base64 = base64.b64encode(buffer.getvalue()).decode()
+
+    return img_base64
+
+
+def generate_device_link_code() -> Optional[dict]:
+    """
+    Generate a device link code from the API.
+
+    Returns:
+        Dict with code, link_url, expires_in_seconds, or None if failed
+    """
+    if not st.session_state.auth_token:
+        return None
+
+    try:
+        with httpx.Client(base_url=API_BASE_URL, verify=VERIFY_SSL, timeout=30.0) as client:
+            response = client.post(
+                "/auth/yahoo/device/generate-code",
+                headers={"Authorization": f"Bearer {st.session_state.auth_token}"},
+            )
+
+            if response.status_code == 200:
+                return response.json()
+            else:
+                logger.error(f"Failed to generate device link code: {response.status_code}")
+                return None
+    except Exception as e:
+        logger.error(f"Failed to generate device link code: {e}")
+        return None
+
+
+def handle_device_link_callback(cookies: EncryptedCookieManager) -> bool:
+    """
+    Handle device link callback from URL parameters.
+
+    When a user scans a QR code, they're directed to the dashboard with a link_code parameter.
+    This function exchanges that code for a session.
+
+    Returns:
+        True if device was linked successfully, False otherwise
+    """
+    params = st.query_params
+
+    if "link_code" not in params:
+        return False
+
+    link_code = params["link_code"]
+    # Clear the URL parameters immediately
+    st.query_params.clear()
+
+    logger.info("Processing device link code")
+    try:
+        with httpx.Client(base_url=API_BASE_URL, verify=VERIFY_SSL, timeout=30.0) as client:
+            response = client.post(
+                "/auth/yahoo/device/link",
+                params={"code": link_code},
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                st.session_state.auth_token = data["access_token"]
+                st.session_state.user_id = data["user"]["id"]
+
+                # Store session ID in cookie for persistence
+                session_id = data.get("session_id")
+                if session_id:
+                    cookies[SESSION_COOKIE_NAME] = session_id
+                    cookies.save()
+
+                logger.info("Device linked successfully via QR code")
+                st.success("Device linked successfully! You are now logged in.")
+                st.rerun()
+                return True
+            else:
+                error_detail = response.json().get("detail", "Invalid or expired code")
+                logger.warning(f"Device link failed: {error_detail}")
+                st.error(f"Failed to link device: {error_detail}")
+                return False
+    except Exception as e:
+        logger.error(f"Failed to link device: {e}")
+        st.error(f"Failed to link device: {e}")
+        return False
 
 
 def handle_oauth_callback(cookies: EncryptedCookieManager) -> None:
@@ -76,6 +192,11 @@ def handle_oauth_callback(cookies: EncryptedCookieManager) -> None:
     if "code" in params:
         code = params["code"]
         session_id = params.get("session")  # Also get session ID from URL
+
+        # Check if this is first login (no existing session cookie)
+        existing_session = cookies.get(SESSION_COOKIE_NAME)
+        is_first_login = not existing_session
+
         # Clear the URL parameters immediately
         st.query_params.clear()
 
@@ -96,6 +217,11 @@ def handle_oauth_callback(cookies: EncryptedCookieManager) -> None:
                     if session_id:
                         cookies[SESSION_COOKIE_NAME] = session_id
                         cookies.save()
+
+                    # Mark as first login to show QR code popup
+                    if is_first_login:
+                        st.session_state.is_first_login = True
+                        st.session_state.show_qr_dialog = True
                         logger.info("Session cookie saved for persistent auth")
 
                     logger.info("User authenticated successfully via OAuth")
@@ -141,9 +267,13 @@ def restore_session_from_cookie(cookies: EncryptedCookieManager) -> bool:
 
             if response.status_code == 200:
                 data = response.json()
-                st.session_state.auth_token = data["access_token"]
+                token = data["access_token"]
+                st.session_state.auth_token = token
                 st.session_state.user_id = data["user"]["id"]
-                logger.info("Session restored from cookie")
+                logger.info(f"Session restored from cookie, token set: {token[:20]}...")
+                # Verify it was actually set
+                verify_token = st.session_state.get("auth_token")
+                logger.debug(f"Verification - session_state.auth_token is set: {verify_token is not None}")
                 return True
             else:
                 # Session invalid/expired - clear the cookie
@@ -189,8 +319,12 @@ def clear_session(cookies: EncryptedCookieManager) -> None:
 def get_api_client() -> httpx.Client:
     """Get configured HTTP client for API calls."""
     headers = {}
-    if st.session_state.auth_token:
-        headers["Authorization"] = f"Bearer {st.session_state.auth_token}"
+    token = st.session_state.get("auth_token")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+        logger.debug(f"API client using auth token: {token[:20]}...")
+    else:
+        logger.warning("API client created WITHOUT auth token - session_state.auth_token is None")
 
     return httpx.Client(
         base_url=API_BASE_URL,
@@ -367,14 +501,95 @@ def render_sidebar(cookies: EncryptedCookieManager) -> None:
 
         st.divider()
 
+        # Link Device (QR Code)
+        st.subheader("Link Device")
+        if st.button("Generate QR Code", use_container_width=True, help="Scan with another device to login"):
+            with st.spinner("Generating QR code..."):
+                qr_data = generate_device_link_code()
+                if qr_data:
+                    st.session_state.qr_code_data = qr_data
+                    st.session_state.show_qr_dialog = True
+                    st.rerun()
+                else:
+                    st.error("Failed to generate QR code. Please try again.")
+
+        st.divider()
+
         # Logout
         if st.button("Logout", use_container_width=True):
             clear_session(cookies)
             st.rerun()
 
 
+def render_qr_code_dialog() -> None:
+    """Render the QR code dialog/popup for device linking."""
+    if not st.session_state.show_qr_dialog:
+        return
+
+    # Generate QR code data if not already generated
+    if not st.session_state.qr_code_data:
+        qr_data = generate_device_link_code()
+        if qr_data:
+            st.session_state.qr_code_data = qr_data
+        else:
+            st.session_state.show_qr_dialog = False
+            return
+
+    qr_data = st.session_state.qr_code_data
+
+    # Use Streamlit's dialog/modal (using a container with styling)
+    with st.container():
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            st.markdown("---")
+            st.markdown("### Link Another Device")
+
+            if st.session_state.is_first_login:
+                st.info(
+                    "**Welcome!** Scan this QR code with your phone to login "
+                    "on mobile without needing to go through Yahoo login again."
+                )
+            else:
+                st.info(
+                    "Scan this QR code with another device to login instantly."
+                )
+
+            # Generate and display QR code
+            qr_image_base64 = generate_qr_code_image(qr_data["link_url"])
+            st.markdown(
+                f'<div style="display: flex; justify-content: center;">'
+                f'<img src="data:image/png;base64,{qr_image_base64}" width="250" />'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+            # Show expiration info
+            expires_in = qr_data.get("expires_in_seconds", 180)
+            st.caption(f"Code expires in {expires_in // 60} minutes")
+
+            # Close button
+            col_a, col_b, col_c = st.columns([1, 1, 1])
+            with col_b:
+                if st.button("Close", use_container_width=True, key="close_qr_dialog"):
+                    st.session_state.show_qr_dialog = False
+                    st.session_state.is_first_login = False
+                    st.session_state.qr_code_data = None
+                    st.rerun()
+
+            # Generate new code button
+            with col_b:
+                if st.button("Generate New Code", use_container_width=True, key="new_qr_code"):
+                    st.session_state.qr_code_data = None
+                    st.rerun()
+
+            st.markdown("---")
+
+
 def render_dashboard(cookies: EncryptedCookieManager) -> None:
     """Render the main dashboard content."""
+    # Show QR code dialog if active
+    render_qr_code_dialog()
+
     render_sidebar(cookies)
 
     if not st.session_state.selected_league:
@@ -440,6 +655,11 @@ def main() -> None:
     if not cookies.ready():
         st.spinner("Loading...")
         st.stop()
+
+    # Handle device link callback (QR code login) - check this first
+    if "link_code" in st.query_params:
+        handle_device_link_callback(cookies)
+        return  # Will rerun after successful link
 
     # Handle OAuth callback (if coming back from login)
     handle_oauth_callback(cookies)

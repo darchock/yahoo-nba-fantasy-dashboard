@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database.connection import get_db
-from app.database.models import User, AuthCode, UserSession
+from app.database.models import User, AuthCode, UserSession, DeviceLinkCode
 from app.logging_config import get_logger
 from app.services.yahoo_api import YahooAPIService
 
@@ -633,4 +633,135 @@ async def auth_status(
         "authenticated": True,
         "user_id": user.id,
         "has_valid_token": user.oauth_token is not None and not user.oauth_token.is_expired,
+    }
+
+
+# Device Linking (QR Code Login)
+
+DEVICE_LINK_CODE_EXPIRE_MINUTES = 3  # QR codes valid for 3 minutes
+
+
+def cleanup_expired_device_codes(db: Session) -> None:
+    """Remove expired device link codes from database."""
+    db.query(DeviceLinkCode).filter(
+        DeviceLinkCode.expires_at < datetime.now(timezone.utc)
+    ).delete()
+    db.commit()
+
+
+@router.post("/device/generate-code")
+async def generate_device_link_code(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """
+    Generate a device link code for QR-based login.
+
+    The logged-in user calls this to get a code that can be used
+    on another device (e.g., mobile) to login without Yahoo OAuth.
+
+    Returns:
+        code: The link code (to be embedded in QR URL)
+        expires_at: When the code expires
+        link_url: Full URL to be encoded in QR code
+    """
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    # Clean up old codes first
+    cleanup_expired_device_codes(db)
+
+    # Generate new code
+    code = secrets.token_urlsafe(32)
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=DEVICE_LINK_CODE_EXPIRE_MINUTES)
+
+    device_code = DeviceLinkCode(
+        code=code,
+        user_id=user.id,
+        expires_at=expires_at,
+    )
+    db.add(device_code)
+    db.commit()
+
+    # Build the link URL (frontend will display this as QR)
+    link_url = f"{settings.FRONTEND_URL}?link_code={code}"
+
+    logger.info(f"Generated device link code for user {user.id}")
+    return {
+        "code": code,
+        "expires_at": expires_at.isoformat(),
+        "expires_in_seconds": DEVICE_LINK_CODE_EXPIRE_MINUTES * 60,
+        "link_url": link_url,
+    }
+
+
+@router.post("/device/link")
+async def link_device(
+    code: str,
+    db: Session = Depends(get_db),
+) -> dict:
+    """
+    Consume a device link code and create a session.
+
+    This is called from the new device (e.g., mobile) after scanning QR.
+    No authentication required - the code itself proves authorization.
+
+    Args:
+        code: The device link code from the QR
+
+    Returns:
+        session_id: Session ID for cookie storage
+        access_token: JWT token for API calls
+        user: User information
+    """
+    # Find the code
+    device_code = db.query(DeviceLinkCode).filter(
+        DeviceLinkCode.code == code,
+        DeviceLinkCode.used == False,  # noqa: E712
+    ).first()
+
+    if not device_code:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or already used device link code",
+        )
+
+    # Check expiration
+    if device_code.is_expired:
+        # Mark as used and reject
+        device_code.used = True  # type: ignore[assignment]
+        db.commit()
+        raise HTTPException(
+            status_code=401,
+            detail="Device link code has expired",
+        )
+
+    # Mark as used (single-use)
+    device_code.used = True  # type: ignore[assignment]
+    db.commit()
+
+    # Get the user
+    user = db.query(User).filter(User.id == device_code.user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=401,
+            detail="User not found",
+        )
+
+    # Create a new session for this device
+    session_id = create_user_session(db, user.id)
+
+    # Generate JWT token
+    access_token = create_access_token(user.id)
+
+    logger.info(f"Device linked successfully for user {user.id}")
+    return {
+        "session_id": session_id,
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": {
+            "id": user.id,
+            "yahoo_guid": user.yahoo_guid,
+            "display_name": user.display_name,
+        },
     }

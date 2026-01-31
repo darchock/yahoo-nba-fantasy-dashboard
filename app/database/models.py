@@ -228,6 +228,34 @@ class AuthCode(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
+class DeviceLinkCode(Base):
+    """
+    Short-lived codes for QR-based device linking.
+
+    Allows users logged in on one device (e.g., desktop) to generate a QR code
+    that can be scanned on another device (e.g., mobile) to login without OAuth.
+    """
+
+    __tablename__ = "device_link_codes"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(String(64), unique=True, nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    used = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    @property
+    def is_expired(self) -> bool:
+        """Check if code has expired."""
+        if self.expires_at is None:
+            return True
+        expires = self.expires_at
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        return datetime.now(timezone.utc) >= expires
+
+
 class UserSession(Base):
     """
     Persistent user sessions for browser cookie authentication.

@@ -24,6 +24,7 @@ dependencies = [
     "tenacity>=8.2.0",
     "pytz>=2024.1",
     "streamlit-cookies-manager>=0.2.0",
+    "qrcode[pil]>=7.4.0",
 ]
 
 [project.optional-dependencies]
