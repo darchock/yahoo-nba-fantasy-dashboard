@@ -994,6 +994,97 @@ None
 
 ---
 
+## Session 12 - 2026-01-30/31
+
+### Completed
+
+**Railway Deployment Complete**
+- Successfully deployed all services (PostgreSQL, API, Dashboard) to Railway
+- Resolved database table creation issues (tables now auto-create on startup)
+- Fixed PYTHONPATH issue for dashboard service
+
+**Mobile Login Solution: QR Code Device Linking**
+
+Yahoo OAuth has issues on mobile browsers (bot detection, cookie policies). Implemented QR code-based device linking as a workaround:
+
+- **Backend:**
+  - Added `DeviceLinkCode` model for temporary QR codes (3-minute expiry)
+  - Added `POST /auth/yahoo/device/generate-code` endpoint (requires auth)
+  - Added `POST /auth/yahoo/device/link` endpoint (no auth, consumes code)
+
+- **Frontend:**
+  - Added `qrcode[pil]` dependency for QR code generation
+  - QR code shown in proper Streamlit modal dialog with X button
+  - "Generate QR Code" button in sidebar under "Link Device" section
+  - Handles `?link_code=` URL parameter for device linking
+  - First login popup shows QR with explanation
+
+**Dashboard UI Improvements**
+
+1. **Home Page:**
+   - Removed refresh button (data uses lazy refresh)
+   - Added **ROTO Table** visualization:
+     - Shows rankings (1=best) for each manager in all 9 stat categories
+     - Total column sums rankings (lower = better overall)
+     - Color-coded: green for rank 1, red for last rank
+     - Includes explanatory caption
+
+2. **Weekly Page:**
+   - Added explanatory captions to all tabs:
+     - Scoreboard: Explains head-to-head matchup display
+     - Totals: Explains raw stats with league average comparison
+     - Rankings: Explains ranking system with color coding
+     - Head-to-Head: Explains simulated cross-league matchups
+   - **Totals tab** now includes League Average row
+
+3. **Periodical Page:**
+   - Aligned color coding to use dark-mode friendly colors (`#2d5a3d` green, `#5a2d2d` red)
+   - Now consistent with weekly.py and transactions.py
+
+**JavaScript Redirect for OAuth**
+- Changed OAuth login from HTTP 307 redirect to JavaScript redirect
+- Shows "Redirecting to Yahoo..." page with spinner
+- Helps bypass Yahoo's mobile bot detection in some cases
+
+### Files Created/Modified
+```
+# Backend
+app/database/models.py         # MODIFIED - Added DeviceLinkCode model
+backend/routes/auth.py         # MODIFIED - Added device linking endpoints, JS redirect
+backend/main.py                # MODIFIED - Debug logging (later cleaned up)
+
+# Frontend
+dashboard/main.py              # MODIFIED - QR code dialog, device link handling
+dashboard/views/home.py        # MODIFIED - Removed refresh, added ROTO table
+dashboard/views/weekly.py      # MODIFIED - Added explanations, league avg row
+dashboard/views/periodical.py  # MODIFIED - Aligned color coding
+
+# Dependencies
+pyproject.toml                 # MODIFIED - Added qrcode[pil]
+requirements.txt               # MODIFIED - Added qrcode[pil]
+```
+
+### Current State
+- **Phase 6: Deployment COMPLETE**
+- Railway services running successfully
+- QR code device linking working for mobile access
+- Dashboard visualizations enhanced
+
+### Commits (not yet pushed)
+1. `Use Streamlit dialog for QR code popup with X button`
+2. `Remove refresh button from home page and align color coding across views`
+3. `Add ROTO table to home page and explanations to weekly tabs`
+
+### Blockers
+None
+
+### Next Session
+- Push pending commits to deploy latest UI changes
+- Monitor production for any issues
+- Consider additional visualization enhancements
+
+---
+
 <!-- Template for new sessions:
 
 ## Session N - YYYY-MM-DD
