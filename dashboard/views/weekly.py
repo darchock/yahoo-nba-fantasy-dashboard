@@ -229,6 +229,11 @@ def render_totals_tab(
         week: Week number
         verify_ssl: Whether to verify SSL certificates
     """
+    st.caption(
+        "Raw statistical totals for each team during the selected week. "
+        "The League Avg row shows the average across all teams for comparison."
+    )
+
     result = fetch_api_data(
         api_base_url=api_base_url,
         auth_token=auth_token,
@@ -256,8 +261,37 @@ def render_totals_tab(
             row[stat] = team.get(stat, "-")
         rows.append(row)
 
+    # Calculate league averages
+    avg_row = {"Team": "League Avg"}
+    for stat in stat_categories:
+        values = []
+        for team in teams:
+            val = team.get(stat)
+            if isinstance(val, (int, float)):
+                values.append(val)
+        if values:
+            avg = sum(values) / len(values)
+            # Format based on stat type
+            if stat in ["FG%", "FT%"]:
+                avg_row[stat] = round(avg, 3)
+            elif stat in ["3PTM", "PTS", "REB", "AST", "STL", "BLK", "TO"]:
+                avg_row[stat] = round(avg, 1)
+            else:
+                avg_row[stat] = round(avg, 1)
+        else:
+            avg_row[stat] = "-"
+    rows.append(avg_row)
+
     df = pd.DataFrame(rows)
-    st.dataframe(df, use_container_width=True, hide_index=True)
+
+    # Style the League Avg row differently
+    def highlight_avg_row(row):
+        if row["Team"] == "League Avg":
+            return ["font-style: italic; background-color: #1a1a2e"] * len(row)
+        return [""] * len(row)
+
+    styled_df = df.style.apply(highlight_avg_row, axis=1)
+    st.dataframe(styled_df, use_container_width=True, hide_index=True)
 
 
 def render_rankings_tab(
@@ -277,6 +311,11 @@ def render_rankings_tab(
         week: Week number
         verify_ssl: Whether to verify SSL certificates
     """
+    st.caption(
+        "Team rankings (1 = best) for each statistical category during the selected week. "
+        "Green highlights rank 1, red highlights the lowest rank."
+    )
+
     result = fetch_api_data(
         api_base_url=api_base_url,
         auth_token=auth_token,
@@ -337,6 +376,11 @@ def render_h2h_tab(
         week: Week number
         verify_ssl: Whether to verify SSL certificates
     """
+    st.caption(
+        "Simulated head-to-head results if each team played every other team this week. "
+        "Shows W-L-T record and win percentage. Green highlights the best performer, red the worst."
+    )
+
     result = fetch_api_data(
         api_base_url=api_base_url,
         auth_token=auth_token,
@@ -437,6 +481,11 @@ def render_scoreboard_tab(matchups: list) -> None:
     Args:
         matchups: List of matchup data from API
     """
+    st.caption(
+        "Head-to-head matchups for the selected week. Each matchup shows the category-by-category "
+        "comparison between two teams, with the winner highlighted in each category."
+    )
+
     if not matchups:
         st.info("No matchups found for this week.")
         return
