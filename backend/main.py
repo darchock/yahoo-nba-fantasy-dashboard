@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from app.config import settings
+from app.config import settings, Settings
 from app.database.connection import engine
 from app.database.models import Base
 from app.logging_config import get_logger, silence_noisy_loggers
@@ -67,6 +67,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Silence noisy loggers (after uvicorn has configured them)
     silence_noisy_loggers()
 
+    # Validate configuration
+    missing = Settings.validate()
+    if missing:
+        logger.error(f"Missing required config: {', '.join(missing)}")
+        raise RuntimeError(f"Missing required config: {', '.join(missing)}")
+
     # Startup: Create database tables
     logger.info("Starting Yahoo Fantasy Dashboard API")
     Base.metadata.create_all(bind=engine)
@@ -90,8 +96,6 @@ app.add_middleware(CorrelationIdMiddleware)
 _cors_origins = [
     "http://localhost:8501",  # Streamlit default
     "http://127.0.0.1:8501",
-    "https://*.streamlit.app",  # Streamlit Cloud
-    "https://*.up.railway.app",  # Railway
 ]
 # Append env-var origins (e.g. CORS_ORIGINS="https://my-app.example.com,https://other.example.com")
 if settings.CORS_ORIGINS:
@@ -102,6 +106,7 @@ if settings.CORS_ORIGINS:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
+    allow_origin_regex=r"https://.*\.(streamlit\.app|up\.railway\.app)",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

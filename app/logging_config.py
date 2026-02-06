@@ -132,12 +132,11 @@ def setup_logging(
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
 
-    # Console handler (development only)
-    if settings.DEBUG:
-        console_handler = logging.StreamHandler()
-        console_handler.setLevel(level)
-        console_handler.setFormatter(formatter)
-        logger.addHandler(console_handler)
+    # Console handler (always active - PaaS platforms capture stdout)
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(level)
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
 
     # Silence noisy third-party loggers
     silence_noisy_loggers()

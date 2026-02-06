@@ -62,6 +62,8 @@ class Settings:
             missing.append("YAHOO_CLIENT_ID")
         if not cls.YAHOO_CLIENT_SECRET:
             missing.append("YAHOO_CLIENT_SECRET")
+        if cls.APP_SECRET_KEY == "dev-secret-change-in-production" and not cls.DEBUG:
+            missing.append("APP_SECRET_KEY (using insecure default)")
         return missing
 
 
