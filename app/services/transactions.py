@@ -217,32 +217,33 @@ class TransactionService:
 
         for txn in transactions:
             for player in txn.players:
-                # Track adds
-                if player.action_type == "add" and player.destination_team_name:
-                    team_name = player.destination_team_name
-                    if team_name not in team_stats:
-                        team_stats[team_name] = {"adds": 0, "drops": 0, "trades": 0}
-                    team_stats[team_name]["adds"] += 1
+                # Track adds - use team_key as identifier, team_name as display
+                if player.action_type == "add" and (player.destination_team_key or player.destination_team_name):
+                    team_key = player.destination_team_key or player.destination_team_name
+                    if team_key not in team_stats:
+                        team_stats[team_key] = {"adds": 0, "drops": 0, "trades": 0}
+                    team_stats[team_key]["adds"] += 1
 
                 # Track drops
-                elif player.action_type == "drop" and player.source_team_name:
-                    team_name = player.source_team_name
-                    if team_name not in team_stats:
-                        team_stats[team_name] = {"adds": 0, "drops": 0, "trades": 0}
-                    team_stats[team_name]["drops"] += 1
+                elif player.action_type == "drop" and (player.source_team_key or player.source_team_name):
+                    team_key = player.source_team_key or player.source_team_name
+                    if team_key not in team_stats:
+                        team_stats[team_key] = {"adds": 0, "drops": 0, "trades": 0}
+                    team_stats[team_key]["drops"] += 1
                 # Track trades
                 elif player.action_type == "trade":
-                    for name in [player.source_team_name, player.destination_team_name]:
-                        if name:
-                            if name not in team_stats:
-                                team_stats[name] = {"adds": 0, "drops": 0, "trades": 0}
-                            team_stats[name]["trades"] += 1
+                    for key in [player.source_team_key or player.source_team_name,
+                                player.destination_team_key or player.destination_team_name]:
+                        if key:
+                            if key not in team_stats:
+                                team_stats[key] = {"adds": 0, "drops": 0, "trades": 0}
+                            team_stats[key]["trades"] += 1
         # Convert to list and sort by total activity
         result = []
-        for team_name, stats in team_stats.items():
+        for team_key, stats in team_stats.items():
             total = stats["adds"] + stats["drops"] + stats["trades"]
             result.append({
-                "team_key": team_name,
+                "team_key": team_key,
                 "adds": stats["adds"],
                 "drops": stats["drops"],
                 "trades": stats["trades"],
