@@ -172,6 +172,38 @@ class TestIsWeekComplete:
         assert is_week_complete(week=1, current_week=1) is False
 
 
+class TestCachedDataIsStale:
+    """Tests for CachedData.is_stale property."""
+
+    def test_complete_data_is_never_stale(self):
+        """CachedData with is_complete=True should never be stale."""
+        from app.database.models import CachedData
+
+        old_fetch = datetime(2025, 1, 1, 0, 0, 0)
+        cache = CachedData(
+            league_key="test",
+            data_type="test",
+            json_data={},
+            fetched_at=old_fetch,
+            is_complete=True,
+        )
+        assert cache.is_stale is False
+
+    def test_incomplete_old_data_is_stale(self):
+        """CachedData with is_complete=False and old fetch should be stale."""
+        from app.database.models import CachedData
+
+        old_fetch = datetime(2025, 1, 1, 0, 0, 0)
+        cache = CachedData(
+            league_key="test",
+            data_type="test",
+            json_data={},
+            fetched_at=old_fetch,
+            is_complete=False,
+        )
+        assert cache.is_stale is True
+
+
 class TestGetCacheExpiryForWeek:
     """Tests for get_cache_expiry_for_week function."""
 

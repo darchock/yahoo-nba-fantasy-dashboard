@@ -309,49 +309,9 @@ class TestTransactionParsing:
 
 
 class TestTransactionService:
-    """Tests for the TransactionService class."""
+    """Tests for the TransactionService class using in-memory test DB."""
 
-    @pytest.fixture
-    def db_session(self):
-        """Get a test database session."""
-        from app.database.connection import get_db
-
-        db = next(get_db())
-        yield db
-        db.close()
-
-    @pytest.fixture
-    def clean_test_transactions(self, db_session):
-        """Clean up test transactions before and after tests."""
-        # Clean up before test
-        db_session.query(TransactionPlayer).filter(
-            TransactionPlayer.transaction_id.in_(
-                db_session.query(Transaction.id).filter(
-                    Transaction.league_key.like("test_%")
-                )
-            )
-        ).delete(synchronize_session=False)
-        db_session.query(Transaction).filter(
-            Transaction.league_key.like("test_%")
-        ).delete(synchronize_session=False)
-        db_session.commit()
-
-        yield
-
-        # Clean up after test
-        db_session.query(TransactionPlayer).filter(
-            TransactionPlayer.transaction_id.in_(
-                db_session.query(Transaction.id).filter(
-                    Transaction.league_key.like("test_%")
-                )
-            )
-        ).delete(synchronize_session=False)
-        db_session.query(Transaction).filter(
-            Transaction.league_key.like("test_%")
-        ).delete(synchronize_session=False)
-        db_session.commit()
-
-    def test_store_transactions_new(self, db_session, clean_test_transactions):
+    def test_store_transactions_new(self, db_session):
         """Test storing new transactions."""
         service = TransactionService(db_session)
 
@@ -386,7 +346,7 @@ class TestTransactionService:
         assert new_count == 1
         assert service.get_transaction_count("test_league") == 1
 
-    def test_store_transactions_dedupe(self, db_session, clean_test_transactions):
+    def test_store_transactions_dedupe(self, db_session):
         """Test that duplicate transactions are skipped."""
         service = TransactionService(db_session)
 
@@ -413,7 +373,7 @@ class TestTransactionService:
         assert new_count_2 == 0
         assert service.get_transaction_count("test_league_dedupe") == 1
 
-    def test_get_transactions_filter_by_type(self, db_session, clean_test_transactions):
+    def test_get_transactions_filter_by_type(self, db_session):
         """Test filtering transactions by type."""
         service = TransactionService(db_session)
 
@@ -454,7 +414,7 @@ class TestTransactionService:
         assert len(drops) == 1
         assert drops[0].type == "drop"
 
-    def test_get_most_added_players(self, db_session, clean_test_transactions):
+    def test_get_most_added_players(self, db_session):
         """Test getting most added players."""
         service = TransactionService(db_session)
 
@@ -515,7 +475,7 @@ class TestTransactionService:
         assert most_added[0]["player_name"] == "Popular Player"
         assert most_added[0]["times_added"] == 2
 
-    def test_get_manager_activity(self, db_session, clean_test_transactions):
+    def test_get_manager_activity(self, db_session):
         """Test getting manager activity statistics."""
         service = TransactionService(db_session)
 
@@ -540,6 +500,7 @@ class TestTransactionService:
                         "source_team_key": None,
                         "destination_type": "team",
                         "destination_team_key": "test_league_activity.t.1",
+                        "destination_team_name": "Team One",
                     },
                     {
                         "player_id": "p2",
@@ -549,6 +510,7 @@ class TestTransactionService:
                         "action_type": "drop",
                         "source_type": "team",
                         "source_team_key": "test_league_activity.t.1",
+                        "source_team_name": "Team One",
                         "destination_type": "waivers",
                         "destination_team_key": None,
                     },
@@ -561,6 +523,7 @@ class TestTransactionService:
         activity = service.get_manager_activity("test_league_activity")
 
         assert len(activity) >= 1
+        # Activity is keyed by team_key (falls back to team_name)
         team1_activity = next(
             (a for a in activity if a["team_key"] == "test_league_activity.t.1"),
             None,
@@ -570,7 +533,47 @@ class TestTransactionService:
         assert team1_activity["drops"] == 1
         assert team1_activity["total"] == 2
 
-    def test_get_transaction_stats(self, db_session, clean_test_transactions):
+    def test_get_manager_activity_without_team_name(self, db_session):
+        """Test manager activity uses team_key when team_name is missing."""
+        service = TransactionService(db_session)
+
+        parsed_transactions = [
+            {
+                "transaction_id": "5100",
+                "league_key": "test_league_activity_noname",
+                "type": "add",
+                "status": "successful",
+                "timestamp": 1700000001,
+                "transaction_date": datetime(2023, 11, 14, tzinfo=timezone.utc),
+                "trader_team_key": None,
+                "tradee_team_key": None,
+                "players": [
+                    {
+                        "player_id": "p1",
+                        "player_name": "Player 1",
+                        "nba_team": "LAL",
+                        "position": "PG",
+                        "action_type": "add",
+                        "source_type": "freeagents",
+                        "source_team_key": None,
+                        "destination_type": "team",
+                        "destination_team_key": "test.t.1",
+                        # No destination_team_name
+                    },
+                ],
+            },
+        ]
+
+        service.store_transactions("test_league_activity_noname", parsed_transactions)
+
+        activity = service.get_manager_activity("test_league_activity_noname")
+
+        # Should still work using destination_team_key as identifier
+        assert len(activity) == 1
+        assert activity[0]["team_key"] == "test.t.1"
+        assert activity[0]["adds"] == 1
+
+    def test_get_transaction_stats(self, db_session):
         """Test getting comprehensive transaction statistics."""
         service = TransactionService(db_session)
 
@@ -611,38 +614,26 @@ class TestTransactionService:
 
 
 class TestSyncTracking:
-    """Tests for transaction sync tracking functionality."""
+    """Tests for transaction sync tracking functionality using in-memory test DB."""
 
     @pytest.fixture
-    def db_session(self):
-        """Get a test database session."""
-        from app.database.connection import get_db
-
-        db = next(get_db())
-        yield db
-        db.close()
-
-    @pytest.fixture
-    def test_user(self, db_session):
+    def sync_user(self, db_session):
         """Create a test user for sync tracking tests."""
         user = User(
-            yahoo_guid="test_sync_user_guid",
-            email="test@example.com",
-            display_name="Test User",
+            yahoo_guid="test_sync_user_guid_unique",
+            email="sync@example.com",
+            display_name="Sync Test User",
         )
         db_session.add(user)
         db_session.commit()
         db_session.refresh(user)
-        yield user
-        # Cleanup
-        db_session.delete(user)
-        db_session.commit()
+        return user
 
     @pytest.fixture
-    def test_user_league(self, db_session, test_user):
+    def sync_user_league(self, db_session, sync_user):
         """Create a test user-league association."""
         user_league = UserLeague(
-            user_id=test_user.id,
+            user_id=sync_user.id,
             league_key="test_sync_league_001",
             league_id="12345",
             league_name="Test Sync League",
@@ -650,98 +641,95 @@ class TestSyncTracking:
         db_session.add(user_league)
         db_session.commit()
         db_session.refresh(user_league)
-        yield user_league
-        # Cleanup
-        db_session.delete(user_league)
-        db_session.commit()
+        return user_league
 
-    def test_get_last_sync_time_never_synced(self, db_session, test_user, test_user_league):
+    def test_get_last_sync_time_never_synced(self, db_session, sync_user, sync_user_league):
         """Test getting last sync time when never synced."""
         service = TransactionService(db_session)
 
-        last_sync = service.get_last_sync_time(test_user.id, test_user_league.league_key)
+        last_sync = service.get_last_sync_time(sync_user.id, sync_user_league.league_key)
 
         assert last_sync is None
 
-    def test_update_last_sync_time(self, db_session, test_user, test_user_league):
+    def test_update_last_sync_time(self, db_session, sync_user, sync_user_league):
         """Test updating last sync time."""
         service = TransactionService(db_session)
 
         # Update sync time
-        result = service.update_last_sync_time(test_user.id, test_user_league.league_key)
+        result = service.update_last_sync_time(sync_user.id, sync_user_league.league_key)
 
         assert result is True
 
         # Verify it was updated
-        last_sync = service.get_last_sync_time(test_user.id, test_user_league.league_key)
+        last_sync = service.get_last_sync_time(sync_user.id, sync_user_league.league_key)
         assert last_sync is not None
         assert isinstance(last_sync, datetime)
         # Should be very recent (within last minute)
         age = datetime.now(timezone.utc) - last_sync
         assert age.total_seconds() < 60
 
-    def test_update_last_sync_time_nonexistent_league(self, db_session, test_user):
+    def test_update_last_sync_time_nonexistent_league(self, db_session, sync_user):
         """Test updating sync time for non-existent user-league."""
         service = TransactionService(db_session)
 
-        result = service.update_last_sync_time(test_user.id, "nonexistent_league")
+        result = service.update_last_sync_time(sync_user.id, "nonexistent_league")
 
         assert result is False
 
-    def test_should_sync_transactions_never_synced(self, db_session, test_user, test_user_league):
+    def test_should_sync_transactions_never_synced(self, db_session, sync_user, sync_user_league):
         """Test sync check when never synced - should always sync."""
         service = TransactionService(db_session)
 
-        should_sync = service.should_sync_transactions(test_user_league.league_key)
+        should_sync = service.should_sync_transactions(sync_user_league.league_key)
 
         assert should_sync is True
 
-    def test_should_sync_transactions_recently_synced(self, db_session, test_user, test_user_league):
+    def test_should_sync_transactions_recently_synced(self, db_session, sync_user, sync_user_league):
         """Test sync check when recently synced - should not sync."""
         service = TransactionService(db_session)
 
         # Set sync time to now
-        service.update_last_sync_time(test_user.id, test_user_league.league_key)
+        service.update_last_sync_time(sync_user.id, sync_user_league.league_key)
 
-        should_sync = service.should_sync_transactions(test_user_league.league_key)
+        should_sync = service.should_sync_transactions(sync_user_league.league_key)
 
         # Should not sync because sync was after 6 AM today (or just now)
         assert should_sync is False
 
-    def test_should_sync_transactions_old_sync(self, db_session, test_user, test_user_league):
+    def test_should_sync_transactions_old_sync(self, db_session, sync_user, sync_user_league):
         """Test sync check when sync was more than a day ago."""
         service = TransactionService(db_session)
 
         # Set sync time to 2 days ago
         past_time = datetime.now(timezone.utc) - timedelta(days=2)
-        test_user_league.last_transaction_sync_at = past_time
+        sync_user_league.last_transaction_sync_at = past_time
         db_session.commit()
 
-        should_sync = service.should_sync_transactions(test_user_league.league_key)
+        should_sync = service.should_sync_transactions(sync_user_league.league_key)
 
         # Should sync because last sync was before today's 6 AM boundary
         assert should_sync is True
 
-    def test_get_sync_metadata_never_synced(self, db_session, test_user, test_user_league):
+    def test_get_sync_metadata_never_synced(self, db_session, sync_user, sync_user_league):
         """Test getting sync metadata when never synced."""
         service = TransactionService(db_session)
 
-        metadata = service.get_sync_metadata(test_user_league.league_key)
+        metadata = service.get_sync_metadata(sync_user_league.league_key)
 
         assert metadata["last_sync_at"] is None
         assert metadata["last_sync_ago_minutes"] is None
         assert metadata["should_sync"] is True
 
-    def test_get_sync_metadata_recently_synced(self, db_session, test_user, test_user_league):
+    def test_get_sync_metadata_recently_synced(self, db_session, sync_user, sync_user_league):
         """Test getting sync metadata when recently synced."""
         service = TransactionService(db_session)
 
         # Set sync time to 30 minutes ago
         past_time = datetime.now(timezone.utc) - timedelta(minutes=30)
-        test_user_league.last_transaction_sync_at = past_time
+        sync_user_league.last_transaction_sync_at = past_time
         db_session.commit()
 
-        metadata = service.get_sync_metadata(test_user_league.league_key)
+        metadata = service.get_sync_metadata(sync_user_league.league_key)
 
         assert metadata["last_sync_at"] is not None
         assert metadata["last_sync_ago_minutes"] is not None
