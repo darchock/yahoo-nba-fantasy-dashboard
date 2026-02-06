@@ -402,6 +402,7 @@ async def get_league_info(
     user: User = Depends(require_auth),
 ) -> dict:
     """Get league metadata with caching."""
+    validate_league_key(league_key)
     data_type = "league_info"
     user_id = user.id
 
@@ -445,6 +446,7 @@ async def get_league_teams(
     user: User = Depends(require_auth),
 ) -> dict:
     """Get all teams in a league with caching."""
+    validate_league_key(league_key)
     data_type = "league_teams"
     user_id = user.id
 
@@ -499,6 +501,7 @@ async def get_user_team(
     Returns:
         User's team info or null if not found
     """
+    validate_league_key(league_key)
     data_type = "league_teams"
     user_id = user.id
     user_guid = user.yahoo_guid
@@ -988,6 +991,7 @@ async def get_league_transactions(
         offset: Number of results to skip
         refresh: Force refresh from Yahoo, ignoring lazy refresh
     """
+    validate_league_key(league_key)
     user_id = user.id
     txn_service = TransactionService(db)
 
@@ -1083,6 +1087,7 @@ async def get_transaction_stats(
     - Most added players
     - Most dropped players
     """
+    validate_league_key(league_key)
     txn_service = TransactionService(db)
     stats = txn_service.get_transaction_stats(league_key)
 
@@ -1116,6 +1121,7 @@ async def get_league_matchups(
     Returns:
         Parsed matchup data with cache metadata
     """
+    validate_league_key(league_key)
     # Matchups use the same endpoint and data as scoreboard
     return await get_league_scoreboard(
         league_key=league_key,
