@@ -87,15 +87,21 @@ app = FastAPI(
 app.add_middleware(CorrelationIdMiddleware)
 
 # CORS middleware - allow Streamlit frontend
+_cors_origins = [
+    "http://localhost:8501",  # Streamlit default
+    "http://127.0.0.1:8501",
+    "https://*.streamlit.app",  # Streamlit Cloud
+    "https://*.up.railway.app",  # Railway
+]
+# Append env-var origins (e.g. CORS_ORIGINS="https://my-app.example.com,https://other.example.com")
+if settings.CORS_ORIGINS:
+    _cors_origins.extend(
+        origin.strip() for origin in settings.CORS_ORIGINS.split(",") if origin.strip()
+    )
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:8501",  # Streamlit default
-        "http://127.0.0.1:8501",
-        "https://*.streamlit.app",  # Streamlit Cloud
-        "https://*.up.railway.app",  # Railway
-        # Production: Add your domain here, e.g., "https://your-domain.com"
-    ],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -51,6 +51,9 @@ class Settings:
     # Session settings
     SESSION_EXPIRE_DAYS: int = int(os.getenv("SESSION_EXPIRE_DAYS", "30"))
 
+    # CORS origins (comma-separated, appended to hardcoded dev origins)
+    CORS_ORIGINS: str = os.getenv("CORS_ORIGINS", "")
+
     @classmethod
     def validate(cls) -> list[str]:
         """Validate required settings are present. Returns list of missing settings."""
