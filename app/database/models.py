@@ -37,7 +37,6 @@ class User(Base):
     # Relationships
     oauth_token = relationship("OAuthToken", back_populates="user", uselist=False)
     leagues = relationship("UserLeague", back_populates="user")
-    predictions = relationship("MatchupPrediction", back_populates="user")
     sessions = relationship("UserSession", back_populates="user", cascade="all, delete-orphan")
 
 
@@ -144,75 +143,6 @@ class CachedData(Base):
         return should_refresh_cache(fetched)
 
 
-# Pick-a-Winner Game Models
-
-class MatchupPrediction(Base):
-    """User predictions for weekly matchups."""
-
-    __tablename__ = "matchup_predictions"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    league_key = Column(String(50), nullable=False, index=True)
-    week = Column(Integer, nullable=False)
-    matchup_id = Column(String(50), nullable=False)  # Unique identifier for the matchup
-    team1_key = Column(String(50), nullable=False)
-    team2_key = Column(String(50), nullable=False)
-    predicted_winner_key = Column(String(50), nullable=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
-
-    # Relationships
-    user = relationship("User", back_populates="predictions")
-    result = relationship("PredictionResult", back_populates="prediction", uselist=False)
-
-    __table_args__ = (
-        UniqueConstraint("user_id", "league_key", "week", "matchup_id", name="uq_user_prediction"),
-    )
-
-
-class PredictionResult(Base):
-    """Results of predictions after matchups complete."""
-
-    __tablename__ = "prediction_results"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    prediction_id = Column(Integer, ForeignKey("matchup_predictions.id"), unique=True, nullable=False)
-    actual_winner_key = Column(String(50), nullable=False)
-    is_correct = Column(Boolean, nullable=False)
-    points_earned = Column(Integer, default=0)
-    calculated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-
-    # Relationships
-    prediction = relationship("MatchupPrediction", back_populates="result")
-
-
-class PredictionStandings(Base):
-    """Aggregated prediction standings per user per league."""
-
-    __tablename__ = "prediction_standings"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    league_key = Column(String(50), nullable=False, index=True)
-    total_correct = Column(Integer, default=0)
-    total_predictions = Column(Integer, default=0)
-    current_streak = Column(Integer, default=0)
-    best_streak = Column(Integer, default=0)
-    last_updated = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
-
-    __table_args__ = (
-        UniqueConstraint("user_id", "league_key", name="uq_prediction_standings"),
-    )
-
-    @property
-    def accuracy(self) -> float:
-        """Calculate prediction accuracy percentage."""
-        if self.total_predictions == 0:  # type: ignore[union-attr]
-            return 0.0
-        return (self.total_correct / self.total_predictions) * 100  # type: ignore[return-value]
-
-
 # Authentication Models
 
 class AuthCode(Base):
@@ -289,22 +219,6 @@ class UserSession(Base):
     def touch(self) -> None:
         """Update last_activity timestamp."""
         self.last_activity = datetime.now(timezone.utc)
-
-
-# Scheduler Models
-
-class JobLog(Base):
-    """Log of scheduled job executions."""
-
-    __tablename__ = "job_logs"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    job_name = Column(String(100), nullable=False)
-    status = Column(String(20), nullable=False)  # started, completed, failed
-    started_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    completed_at = Column(DateTime, nullable=True)
-    error_message = Column(Text, nullable=True)
-    records_processed = Column(Integer, default=0)
 
 
 # Transaction Models

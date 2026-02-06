@@ -6,8 +6,4 @@ from .models import (
     OAuthToken,
     UserLeague,
     CachedData,
-    MatchupPrediction,
-    PredictionResult,
-    PredictionStandings,
-    JobLog,
 )
