@@ -91,8 +91,6 @@ class YahooAPIService:
         """
         self.db = db
         self.user = user
-        self._access_token: Optional[str] = None
-        self._token_expires_at: Optional[datetime] = None
 
     @classmethod
     def get_authorization_url(cls, state: str = "") -> str:
@@ -220,10 +218,6 @@ class YahooAPIService:
 
         self.db.commit()
 
-        # Update cached values
-        self._access_token = token_data["access_token"]
-        self._token_expires_at = expires_at
-
     async def get_valid_access_token(self) -> Optional[str]:
         """
         Get a valid access token, refreshing if necessary.
@@ -234,23 +228,11 @@ class YahooAPIService:
         if not self.user or not self.user.oauth_token:
             return None
 
-        # Check if cached token is still valid (with 5 min buffer)
-        if self._access_token and self._token_expires_at:
-            if datetime.now(timezone.utc) < self._token_expires_at - timedelta(minutes=5):
-                return self._access_token
-
-        # Check database token
         token = self.user.oauth_token
         if not token.is_expired:
-            self._access_token = token.access_token
-            # Ensure expires_at is timezone-aware (SQLite stores naive datetimes)
-            expires_at = token.expires_at
-            if expires_at and expires_at.tzinfo is None:
-                expires_at = expires_at.replace(tzinfo=timezone.utc)
-            self._token_expires_at = expires_at
-            return self._access_token
+            return token.access_token
 
-        # Try to refresh
+        # Token expired - try to refresh
         try:
             new_token = await self.refresh_access_token()
             if new_token:
@@ -304,9 +286,30 @@ class YahooAPIService:
         user_id = self.user.id if self.user else "unknown"
         logger.info(f"Yahoo API request: {method} {endpoint} params={log_params or None} user={user_id}")
 
-        return await self._execute_request_with_retry(
-            method, url, headers, params, endpoint, user_id
-        )
+        try:
+            return await self._execute_request_with_retry(
+                method, url, headers, params, endpoint, user_id
+            )
+        except YahooAuthError:
+            # Token may have expired mid-flight. Attempt one refresh and retry.
+            logger.info(f"Got 401 from Yahoo, attempting token refresh: user={user_id}")
+            try:
+                new_token_data = await self.refresh_access_token()
+                if not new_token_data:
+                    raise YahooAuthError("Token refresh failed. Please log in again.")
+            except YahooAuthError:
+                raise
+            except Exception as e:
+                logger.error(f"Token refresh failed: user={user_id} error={e}")
+                raise YahooAuthError("Token refresh failed. Please log in again.")
+
+            # Retry with new token
+            new_token = new_token_data["access_token"]
+            headers = {"Authorization": f"Bearer {new_token}"}
+            logger.info(f"Retrying Yahoo API request after token refresh: {endpoint} user={user_id}")
+            return await self._execute_request_with_retry(
+                method, url, headers, params, endpoint, user_id
+            )
 
     @retry(
         stop=stop_after_attempt(3),

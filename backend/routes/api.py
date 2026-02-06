@@ -173,13 +173,16 @@ async def get_yahoo_service(
     """
     Get an authenticated Yahoo API service for the current user.
 
+    Does NOT check token expiry here - YahooAPIService.get_valid_access_token()
+    handles refresh transparently using the refresh token.
+
     Raises:
-        HTTPException: If user has no valid token
+        HTTPException: If user has no OAuth token record at all
     """
-    if not user.oauth_token or user.oauth_token.is_expired:
+    if not user.oauth_token:
         raise HTTPException(
             status_code=401,
-            detail="Token expired. Please log in again.",
+            detail="No Yahoo token found. Please log in again.",
         )
 
     return YahooAPIService(db=db, user=user)
