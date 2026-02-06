@@ -174,13 +174,16 @@ def handle_device_link_callback(cookies: EncryptedCookieManager) -> bool:
                 st.rerun()
                 return True
             else:
-                error_detail = response.json().get("detail", "Invalid or expired code")
+                try:
+                    error_detail = response.json().get("detail", "Unknown error")
+                except Exception:
+                    error_detail = "Unknown error"
                 logger.warning(f"Device link failed: {error_detail}")
                 st.error(f"Failed to link device: {error_detail}")
                 return False
     except Exception as e:
         logger.error(f"Failed to link device: {e}")
-        st.error(f"Failed to link device: {e}")
+        st.error("Something went wrong. Please try again.")
         return False
 
 
@@ -227,12 +230,15 @@ def handle_oauth_callback(cookies: EncryptedCookieManager) -> None:
                     logger.info("User authenticated successfully via OAuth")
                     st.rerun()
                 else:
-                    error_detail = response.json().get("detail", "Unknown error")
+                    try:
+                        error_detail = response.json().get("detail", "Unknown error")
+                    except Exception:
+                        error_detail = "Unknown error"
                     logger.warning(f"Authentication failed: {error_detail}")
                     st.error(f"Authentication failed: {error_detail}")
         except Exception as e:
             logger.error(f"Failed to complete authentication: {e}")
-            st.error(f"Failed to complete authentication: {e}")
+            st.error("Something went wrong. Please try again.")
 
     # Check for error
     if "error" in params:
@@ -270,7 +276,7 @@ def restore_session_from_cookie(cookies: EncryptedCookieManager) -> bool:
                 token = data["access_token"]
                 st.session_state.auth_token = token
                 st.session_state.user_id = data["user"]["id"]
-                logger.info(f"Session restored from cookie, token set: {token[:20]}...")
+                logger.info("Session restored from cookie")
                 # Verify it was actually set
                 verify_token = st.session_state.get("auth_token")
                 logger.debug(f"Verification - session_state.auth_token is set: {verify_token is not None}")
@@ -322,7 +328,7 @@ def get_api_client() -> httpx.Client:
     token = st.session_state.get("auth_token")
     if token:
         headers["Authorization"] = f"Bearer {token}"
-        logger.debug(f"API client using auth token: {token[:20]}...")
+        logger.debug("API client configured with auth token")
     else:
         logger.warning("API client created WITHOUT auth token - session_state.auth_token is None")
 
@@ -376,7 +382,7 @@ def fetch_leagues(sync: bool = False) -> list:
                 st.rerun()
     except Exception as e:
         logger.error(f"Failed to fetch leagues: {e}")
-        st.error(f"Failed to fetch leagues: {e}")
+        st.error("Something went wrong. Please try again.")
 
     return []
 

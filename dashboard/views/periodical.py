@@ -8,6 +8,10 @@ import streamlit as st
 import httpx
 import pandas as pd
 
+from app.logging_config import get_logger
+
+logger = get_logger(__name__)
+
 
 # Stat categories in display order
 STAT_CATEGORIES = ["FG%", "FT%", "3PTM", "PTS", "REB", "AST", "STL", "BLK", "TO"]
@@ -45,17 +49,23 @@ def fetch_api_data(
             if response.status_code == 200:
                 return response.json()
             elif response.status_code == 401:
-                st.error("Session expired. Please log in again.")
+                st.session_state.auth_token = None
+                st.session_state.user_id = None
+                st.rerun()
                 return None
             elif response.status_code == 400:
-                error_detail = response.json().get("detail", "Invalid request")
+                try:
+                    error_detail = response.json().get("detail", "Invalid request")
+                except Exception:
+                    error_detail = "Invalid request"
                 st.error(f"Validation error: {error_detail}")
                 return None
             else:
                 st.error(f"Failed to fetch data: {response.status_code}")
                 return None
     except Exception as e:
-        st.error(f"Error fetching data: {e}")
+        logger.error(f"Error fetching data: {e}")
+        st.error("Something went wrong. Please try again.")
         return None
 
 

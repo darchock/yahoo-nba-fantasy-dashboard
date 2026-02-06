@@ -10,6 +10,10 @@ import streamlit as st
 import httpx
 import pandas as pd
 
+from app.logging_config import get_logger
+
+logger = get_logger(__name__)
+
 
 # Dark-mode friendly highlight colors
 COLOR_WIN = "#2d5a3d"  # Muted forest green
@@ -46,13 +50,16 @@ def fetch_api_data(
             if response.status_code == 200:
                 return response.json()
             elif response.status_code == 401:
-                st.error("Session expired. Please log in again.")
+                st.session_state.auth_token = None
+                st.session_state.user_id = None
+                st.rerun()
                 return None
             else:
                 st.error(f"Failed to fetch data: {response.status_code}")
                 return None
     except Exception as e:
-        st.error(f"Error fetching data: {e}")
+        logger.error(f"Error fetching data: {e}")
+        st.error("Something went wrong. Please try again.")
         return None
 
 

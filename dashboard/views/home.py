@@ -10,6 +10,10 @@ import streamlit as st
 import httpx
 import pandas as pd
 
+from app.logging_config import get_logger
+
+logger = get_logger(__name__)
+
 
 # Stat categories in display order
 STAT_CATEGORIES = ["FG%", "FT%", "3PTM", "PTS", "REB", "AST", "STL", "BLK", "TO"]
@@ -96,13 +100,16 @@ def render_league_overview(
             if response.status_code == 200:
                 response_data = response.json()
             elif response.status_code == 401:
-                st.error("Session expired. Please log in again.")
+                st.session_state.auth_token = None
+                st.session_state.user_id = None
+                st.rerun()
                 return
             else:
                 st.error(f"Failed to fetch league data: {response.status_code}")
                 return
     except Exception as e:
-        st.error(f"Error fetching league data: {e}")
+        logger.error(f"Error fetching league data: {e}")
+        st.error("Something went wrong. Please try again.")
         return
 
     # Extract data and cache info

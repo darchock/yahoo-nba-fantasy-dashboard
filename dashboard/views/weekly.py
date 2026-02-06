@@ -10,6 +10,10 @@ import streamlit as st
 import httpx
 import pandas as pd
 
+from app.logging_config import get_logger
+
+logger = get_logger(__name__)
+
 
 # Stat categories in display order
 STAT_CATEGORIES = ["FG%", "FT%", "3PTM", "PTS", "REB", "AST", "STL", "BLK", "TO"]
@@ -202,13 +206,16 @@ def fetch_api_data(
             if response.status_code == 200:
                 return response.json()
             elif response.status_code == 401:
-                st.error("Session expired. Please log in again.")
+                st.session_state.auth_token = None
+                st.session_state.user_id = None
+                st.rerun()
                 return None
             else:
                 st.error(f"Failed to fetch data: {response.status_code}")
                 return None
     except Exception as e:
-        st.error(f"Error fetching data: {e}")
+        logger.error(f"Error fetching data: {e}")
+        st.error("Something went wrong. Please try again.")
         return None
 
 
@@ -470,13 +477,16 @@ def fetch_scoreboard_data(
                 matchups = data.get("matchups", [])
                 return matchups, cache_info
             elif response.status_code == 401:
-                st.error("Session expired. Please log in again.")
+                st.session_state.auth_token = None
+                st.session_state.user_id = None
+                st.rerun()
                 return None
             else:
                 st.error(f"Failed to fetch scoreboard: {response.status_code}")
                 return None
     except Exception as e:
-        st.error(f"Error fetching scoreboard: {e}")
+        logger.error(f"Error fetching scoreboard: {e}")
+        st.error("Something went wrong. Please try again.")
         return None
 
 
